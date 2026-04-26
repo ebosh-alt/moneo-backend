@@ -173,6 +173,32 @@ func TestTokenServiceIssueRefreshTokenAndHashFlow(t *testing.T) {
 	}
 }
 
+func TestTokenServiceIssueOneTimeTokenUsesProvidedTTL(t *testing.T) {
+	now := time.Date(2026, 4, 26, 18, 0, 0, 0, time.UTC)
+	service, err := NewTokenService(TokenServiceConfig{
+		AccessTokenTTL:  15 * time.Minute,
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+		JWTSecret:       "test-secret",
+	}, staticNow{value: now})
+	if err != nil {
+		t.Fatalf("new token service: %v", err)
+	}
+
+	token, hash, expiresAt, err := service.IssueOneTimeToken(45 * time.Minute)
+	if err != nil {
+		t.Fatalf("issue one-time token: %v", err)
+	}
+	if strings.TrimSpace(token) == "" {
+		t.Fatal("one-time token must not be empty")
+	}
+	if hash == token {
+		t.Fatal("one-time token hash must differ from raw token")
+	}
+	if expiresAt.Sub(now) != 45*time.Minute {
+		t.Fatalf("expected one-time token ttl 45m, got %s", expiresAt.Sub(now))
+	}
+}
+
 func decodeJWTPayload(t *testing.T, token string) map[string]any {
 	t.Helper()
 

@@ -161,6 +161,44 @@ LIMIT 1
 	}, nil
 }
 
+func (r *AuthUserRepository) UpdatePassword(ctx context.Context, userID shared.UserID, passwordHash string, updatedAt time.Time) error {
+	const query = `
+UPDATE users
+SET password_hash = $2,
+    updated_at = $3
+WHERE id = $1
+`
+
+	commandTag, err := r.pool.Exec(ctx, query, string(userID), passwordHash, updatedAt)
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appidentity.ErrUserNotFound
+	}
+
+	return nil
+}
+
+func (r *AuthUserRepository) MarkEmailVerified(ctx context.Context, userID shared.UserID, updatedAt time.Time) error {
+	const query = `
+UPDATE users
+SET email_verified = TRUE,
+    updated_at = $2
+WHERE id = $1
+`
+
+	commandTag, err := r.pool.Exec(ctx, query, string(userID), updatedAt)
+	if err != nil {
+		return fmt.Errorf("mark user email verified: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appidentity.ErrUserNotFound
+	}
+
+	return nil
+}
+
 type AuthSessionRepository struct {
 	pool *pgxpool.Pool
 }
@@ -463,6 +501,141 @@ WHERE user_id = $1
 	}
 
 	return nil
+}
+
+type AuthOneTimeTokenRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewAuthOneTimeTokenRepository(pool *pgxpool.Pool) *AuthOneTimeTokenRepository {
+	return &AuthOneTimeTokenRepository{pool: pool}
+}
+
+func (r *AuthOneTimeTokenRepository) Create(ctx context.Context, token domainidentity.OneTimeToken) error {
+	const query = `
+INSERT INTO auth_one_time_tokens (
+	id,
+	user_id,
+	purpose,
+	token_hash,
+	created_at,
+	expires_at,
+	used_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+	if _, err := r.pool.Exec(
+		ctx,
+		query,
+		string(token.ID),
+		string(token.UserID),
+		string(token.Purpose),
+		token.TokenHash,
+		token.CreatedAt,
+		token.ExpiresAt,
+		token.UsedAt,
+	); err != nil {
+		return fmt.Errorf("insert one-time token: %w", err)
+	}
+
+	return nil
+}
+
+func (r *AuthOneTimeTokenRepository) FindActiveByHash(
+	ctx context.Context,
+	purpose domainidentity.OneTimeTokenPurpose,
+	tokenHash string,
+	now time.Time,
+) (domainidentity.OneTimeToken, error) {
+	const query = `
+SELECT
+	id::text,
+	user_id::text,
+	purpose,
+	token_hash,
+	created_at,
+	expires_at,
+	used_at
+FROM auth_one_time_tokens
+WHERE purpose = $1
+  AND token_hash = $2
+  AND used_at IS NULL
+  AND expires_at > $3
+LIMIT 1
+`
+
+	var (
+		id         string
+		userID     string
+		rawPurpose string
+		hash       string
+		createdAt  time.Time
+		expiresAt  time.Time
+		usedAt     *time.Time
+	)
+
+	if err := r.pool.QueryRow(ctx, query, string(purpose), tokenHash, now).Scan(
+		&id,
+		&userID,
+		&rawPurpose,
+		&hash,
+		&createdAt,
+		&expiresAt,
+		&usedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domainidentity.OneTimeToken{}, appidentity.ErrOneTimeTokenNotFound
+		}
+
+		return domainidentity.OneTimeToken{}, fmt.Errorf("select active one-time token by hash: %w", err)
+	}
+
+	parsedPurpose, err := parseOneTimeTokenPurpose(rawPurpose)
+	if err != nil {
+		return domainidentity.OneTimeToken{}, err
+	}
+
+	return domainidentity.OneTimeToken{
+		ID:        shared.OneTimeTokenID(id),
+		UserID:    shared.UserID(userID),
+		Purpose:   parsedPurpose,
+		TokenHash: hash,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		UsedAt:    usedAt,
+	}, nil
+}
+
+func (r *AuthOneTimeTokenRepository) MarkUsed(ctx context.Context, tokenID shared.OneTimeTokenID, usedAt time.Time) error {
+	const query = `
+UPDATE auth_one_time_tokens
+SET used_at = $2
+WHERE id = $1
+  AND used_at IS NULL
+  AND expires_at > $2
+`
+
+	commandTag, err := r.pool.Exec(ctx, query, string(tokenID), usedAt)
+	if err != nil {
+		return fmt.Errorf("mark one-time token used: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appidentity.ErrOneTimeTokenNotFound
+	}
+
+	return nil
+}
+
+func parseOneTimeTokenPurpose(raw string) (domainidentity.OneTimeTokenPurpose, error) {
+	switch strings.TrimSpace(raw) {
+	case string(domainidentity.OneTimeTokenPurposePasswordReset):
+		return domainidentity.OneTimeTokenPurposePasswordReset, nil
+	case string(domainidentity.OneTimeTokenPurposeEmailVerification):
+		return domainidentity.OneTimeTokenPurposeEmailVerification, nil
+	default:
+		return "", fmt.Errorf("unknown one-time token purpose %q", raw)
+	}
 }
 
 func isUniqueViolation(err error, indexName string) bool {

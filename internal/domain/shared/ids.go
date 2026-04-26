@@ -2,6 +2,7 @@ package shared
 
 type UserID string
 type SessionID string
+type OneTimeTokenID string
 type WorkspaceID string
 type BudgetMemberID string
 

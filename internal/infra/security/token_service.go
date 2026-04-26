@@ -22,15 +22,16 @@ const (
 )
 
 var (
-	ErrJWTSecretRequired     = errors.New("jwt secret is required")
-	ErrInvalidAccessTokenTTL = errors.New("invalid access token ttl")
-	ErrInvalidRefreshTTL     = errors.New("invalid refresh token ttl")
-	ErrInvalidToken          = errors.New("invalid token")
-	ErrInvalidTokenSignature = errors.New("invalid token signature")
-	ErrTokenExpired          = errors.New("token expired")
-	ErrTokenClaimsMissing    = errors.New("token claims missing")
-	ErrRefreshTokenEmpty     = errors.New("refresh token is empty")
-	ErrRefreshTokenHashEmpty = errors.New("refresh token hash is empty")
+	ErrJWTSecretRequired      = errors.New("jwt secret is required")
+	ErrInvalidAccessTokenTTL  = errors.New("invalid access token ttl")
+	ErrInvalidRefreshTTL      = errors.New("invalid refresh token ttl")
+	ErrInvalidOneTimeTokenTTL = errors.New("invalid one-time token ttl")
+	ErrInvalidToken           = errors.New("invalid token")
+	ErrInvalidTokenSignature  = errors.New("invalid token signature")
+	ErrTokenExpired           = errors.New("token expired")
+	ErrTokenClaimsMissing     = errors.New("token claims missing")
+	ErrRefreshTokenEmpty      = errors.New("refresh token is empty")
+	ErrRefreshTokenHashEmpty  = errors.New("refresh token hash is empty")
 )
 
 type TokenServiceConfig struct {
@@ -192,6 +193,25 @@ func (s *TokenService) IssueRefreshToken() (token string, hash string, expiresAt
 	return token, hash, s.clock.Now().UTC().Add(s.config.RefreshTokenTTL), nil
 }
 
+func (s *TokenService) IssueOneTimeToken(ttl time.Duration) (token string, hash string, expiresAt time.Time, err error) {
+	if ttl <= 0 {
+		return "", "", time.Time{}, ErrInvalidOneTimeTokenTTL
+	}
+
+	rawToken := make([]byte, 32)
+	if _, err := rand.Read(rawToken); err != nil {
+		return "", "", time.Time{}, fmt.Errorf("generate one-time token: %w", err)
+	}
+
+	token = base64.RawURLEncoding.EncodeToString(rawToken)
+	hash, err = s.HashOneTimeToken(token)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+
+	return token, hash, s.clock.Now().UTC().Add(ttl), nil
+}
+
 func (s *TokenService) HashRefreshToken(refreshToken string) (string, error) {
 	if strings.TrimSpace(refreshToken) == "" {
 		return "", ErrRefreshTokenEmpty
@@ -199,6 +219,10 @@ func (s *TokenService) HashRefreshToken(refreshToken string) (string, error) {
 
 	digest := sha256.Sum256([]byte(refreshToken))
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func (s *TokenService) HashOneTimeToken(token string) (string, error) {
+	return s.HashRefreshToken(token)
 }
 
 func (s *TokenService) VerifyRefreshTokenHash(refreshToken string, expectedHash string) (bool, error) {

@@ -25,6 +25,7 @@ const (
 	maxEmailLength             = 320
 	maxPasswordLength          = 1024
 	maxRefreshTokenLength      = 4096
+	maxOneTimeTokenLength      = 4096
 )
 
 type AuthUseCase interface {
@@ -37,8 +38,19 @@ type AuthUseCase interface {
 	RevokeSession(ctx context.Context, input appidentity.RevokeSessionInput) error
 }
 
+type AuthPostMVPUseCase interface {
+	ForgotPassword(ctx context.Context, input appidentity.ForgotPasswordInput) error
+	ResetPassword(ctx context.Context, input appidentity.ResetPasswordInput) error
+	SendVerificationEmail(ctx context.Context, input appidentity.SendVerificationEmailInput) error
+	VerifyEmail(ctx context.Context, input appidentity.VerifyEmailInput) error
+}
+
 type authServiceAdapter struct {
 	service *appidentity.AuthFlowService
+}
+
+type authPostMVPServiceAdapter struct {
+	service *appidentity.AuthPostMVPService
 }
 
 func (a authServiceAdapter) Register(ctx context.Context, input appidentity.RegisterInput) (appidentity.AuthTokens, error) {
@@ -69,14 +81,36 @@ func (a authServiceAdapter) RevokeSession(ctx context.Context, input appidentity
 	return a.service.RevokeSession(ctx, input)
 }
 
-type AuthHandler struct {
-	auth AuthUseCase
+func (a authPostMVPServiceAdapter) ForgotPassword(ctx context.Context, input appidentity.ForgotPasswordInput) error {
+	return a.service.ForgotPassword(ctx, input)
 }
 
-func NewAuthHandler(authService *appidentity.AuthFlowService) *AuthHandler {
-	return &AuthHandler{
+func (a authPostMVPServiceAdapter) ResetPassword(ctx context.Context, input appidentity.ResetPasswordInput) error {
+	return a.service.ResetPassword(ctx, input)
+}
+
+func (a authPostMVPServiceAdapter) SendVerificationEmail(ctx context.Context, input appidentity.SendVerificationEmailInput) error {
+	return a.service.SendVerificationEmail(ctx, input)
+}
+
+func (a authPostMVPServiceAdapter) VerifyEmail(ctx context.Context, input appidentity.VerifyEmailInput) error {
+	return a.service.VerifyEmail(ctx, input)
+}
+
+type AuthHandler struct {
+	auth    AuthUseCase
+	postMVP AuthPostMVPUseCase
+}
+
+func NewAuthHandler(authService *appidentity.AuthFlowService, postMVPService ...*appidentity.AuthPostMVPService) *AuthHandler {
+	handler := &AuthHandler{
 		auth: authServiceAdapter{service: authService},
 	}
+	if len(postMVPService) > 0 && postMVPService[0] != nil {
+		handler.postMVP = authPostMVPServiceAdapter{service: postMVPService[0]}
+	}
+
+	return handler
 }
 
 type registerRequest struct {
@@ -88,6 +122,20 @@ type registerRequest struct {
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type resetPasswordRequest struct {
+	Token           string `json:"token"`
+	Password        string `json:"password"`
+	PasswordConfirm string `json:"password_confirm"`
+}
+
+type verifyEmailRequest struct {
+	Token string `json:"token"`
 }
 
 type authResponse struct {
@@ -165,6 +213,53 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		AccessToken: tokens.AccessToken,
 		ExpiresIn:   tokens.ExpiresIn,
 	})
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	if h.postMVP == nil {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "not_implemented"})
+		return
+	}
+
+	var request forgotPasswordRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil || !validateForgotPasswordRequest(request) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+		return
+	}
+
+	if err := h.postMVP.ForgotPassword(c.Request.Context(), appidentity.ForgotPasswordInput{
+		Email: request.Email,
+	}); err != nil {
+		h.writePostMVPAuthError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	if h.postMVP == nil {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "not_implemented"})
+		return
+	}
+
+	var request resetPasswordRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil || !validateResetPasswordRequest(request) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+		return
+	}
+
+	if err := h.postMVP.ResetPassword(c.Request.Context(), appidentity.ResetPasswordInput{
+		Token:           request.Token,
+		Password:        request.Password,
+		PasswordConfirm: request.PasswordConfirm,
+	}); err != nil {
+		h.writePostMVPAuthError(c, err)
+		return
+	}
+
+	clearRefreshCookie(c)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
@@ -315,6 +410,51 @@ func (h *AuthHandler) RevokeSession(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *AuthHandler) SendVerificationEmail(c *gin.Context) {
+	if h.postMVP == nil {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "not_implemented"})
+		return
+	}
+
+	user, userOK := UserFromContext(c)
+	_, sessionOK := SessionFromContext(c)
+	if !userOK || !sessionOK {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
+		return
+	}
+
+	if err := h.postMVP.SendVerificationEmail(c.Request.Context(), appidentity.SendVerificationEmailInput{
+		UserID: user.ID,
+	}); err != nil {
+		h.writePostMVPAuthError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	if h.postMVP == nil {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "not_implemented"})
+		return
+	}
+
+	var request verifyEmailRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil || !validateVerifyEmailRequest(request) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+		return
+	}
+
+	if err := h.postMVP.VerifyEmail(c.Request.Context(), appidentity.VerifyEmailInput{
+		Token: request.Token,
+	}); err != nil {
+		h.writePostMVPAuthError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *AuthHandler) writeAuthError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, appidentity.ErrEmailAlreadyRegistered):
@@ -325,6 +465,23 @@ func (h *AuthHandler) writeAuthError(c *gin.Context, err error) {
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
 	case errors.Is(err, appidentity.ErrInvalidCredentials):
 		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_credentials"})
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+	default:
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
+	}
+}
+
+func (h *AuthHandler) writePostMVPAuthError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidPasswordResetToken):
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_reset_token"})
+	case errors.Is(err, appidentity.ErrInvalidEmailVerificationToken):
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_verification_token"})
+	case errors.Is(err, appidentity.ErrInvalidAccessToken):
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
 	case errors.Is(err, domainidentity.ErrInvalidEmail),
 		errors.Is(err, domainidentity.ErrInvalidPassword),
 		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
@@ -420,6 +577,29 @@ func validateLoginRequest(request loginRequest) bool {
 	}
 
 	return true
+}
+
+func validateForgotPasswordRequest(request forgotPasswordRequest) bool {
+	email := strings.TrimSpace(request.Email)
+	return email != "" && len(email) <= maxEmailLength
+}
+
+func validateResetPasswordRequest(request resetPasswordRequest) bool {
+	if strings.TrimSpace(request.Token) == "" || len(request.Token) > maxOneTimeTokenLength {
+		return false
+	}
+	if len(request.Password) == 0 || len(request.Password) > maxPasswordLength {
+		return false
+	}
+	if len(request.PasswordConfirm) == 0 || len(request.PasswordConfirm) > maxPasswordLength {
+		return false
+	}
+
+	return true
+}
+
+func validateVerifyEmailRequest(request verifyEmailRequest) bool {
+	return strings.TrimSpace(request.Token) != "" && len(request.Token) <= maxOneTimeTokenLength
 }
 
 func decodeStrictJSONBody(c *gin.Context, target any) error {

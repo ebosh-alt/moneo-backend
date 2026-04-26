@@ -31,19 +31,25 @@ type AuthSecurityConfig struct {
 }
 
 var defaultAuthRateLimits = map[string]AuthRateLimitRule{
-	"/auth/login":           {MaxAttempts: 5, Window: time.Minute},
-	"/auth/register":        {MaxAttempts: 5, Window: time.Minute},
-	"/auth/refresh":         {MaxAttempts: 10, Window: time.Minute},
-	"/auth/forgot-password": {MaxAttempts: 5, Window: time.Minute},
+	"/auth/login":                   {MaxAttempts: 5, Window: time.Minute},
+	"/auth/register":                {MaxAttempts: 5, Window: time.Minute},
+	"/auth/reset-password":          {MaxAttempts: 5, Window: time.Minute},
+	"/auth/refresh":                 {MaxAttempts: 10, Window: time.Minute},
+	"/auth/verify-email":            {MaxAttempts: 10, Window: time.Minute},
+	"/auth/send-verification-email": {MaxAttempts: 5, Window: time.Minute},
+	"/auth/forgot-password":         {MaxAttempts: 5, Window: time.Minute},
 }
 
 var authHTTPSRequiredPaths = map[string]struct{}{
-	"/auth/login":           {},
-	"/auth/register":        {},
-	"/auth/refresh":         {},
-	"/auth/logout":          {},
-	"/auth/logout-all":      {},
-	"/auth/forgot-password": {},
+	"/auth/login":                   {},
+	"/auth/register":                {},
+	"/auth/reset-password":          {},
+	"/auth/refresh":                 {},
+	"/auth/logout":                  {},
+	"/auth/logout-all":              {},
+	"/auth/verify-email":            {},
+	"/auth/send-verification-email": {},
+	"/auth/forgot-password":         {},
 }
 
 func DefaultAuthSecurityConfig() AuthSecurityConfig {
@@ -113,6 +119,14 @@ func suspiciousEvent(path string, statusCode int) (string, bool) {
 	case "/auth/refresh":
 		if statusCode == http.StatusUnauthorized {
 			return "auth_refresh_failed", true
+		}
+	case "/auth/reset-password":
+		if statusCode == http.StatusUnauthorized {
+			return "auth_reset_password_failed", true
+		}
+	case "/auth/verify-email":
+		if statusCode == http.StatusUnauthorized {
+			return "auth_verify_email_failed", true
 		}
 	case "/auth/register":
 		if statusCode == http.StatusConflict {

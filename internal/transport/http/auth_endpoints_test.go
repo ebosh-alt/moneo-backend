@@ -644,11 +644,13 @@ func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 }
 
 type authEndpointsFixture struct {
-	router       http.Handler
-	authService  *appidentity.AuthService
-	sessionRepo  *inMemorySessionRepo
-	tokenService *security.TokenService
-	clock        *mutableClock
+	router              http.Handler
+	authService         *appidentity.AuthService
+	sessionRepo         *inMemorySessionRepo
+	tokenRepo           *inMemoryOneTimeTokenRepo
+	notificationService *captureAuthNotifications
+	tokenService        *security.TokenService
+	clock               *mutableClock
 }
 
 func newAuthEndpointsFixture(t *testing.T) authEndpointsFixture {
@@ -686,21 +688,41 @@ func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transp
 		clock,
 	)
 
+	tokenRepo := newInMemoryOneTimeTokenRepo()
+	notificationService := &captureAuthNotifications{}
+	postMVPService, err := appidentity.NewAuthPostMVPService(
+		userRepo,
+		sessionRepo,
+		tokenRepo,
+		tokenService,
+		&sequenceOneTimeTokenIDGenerator{},
+		hasher,
+		clock,
+		notificationService,
+		notificationService,
+		appidentity.DefaultAuthPostMVPConfig(),
+	)
+	if err != nil {
+		t.Fatalf("new post-mvp auth service: %v", err)
+	}
+
 	accessAuthService := appidentity.NewAccessAuthService(tokenService, userRepo, sessionRepo)
 	authMiddleware := transporthttp.NewAuthMiddleware(accessAuthService)
 	if routerOptions.AuthMiddleware == nil {
 		routerOptions.AuthMiddleware = authMiddleware
 	}
 
-	handler := transporthttp.NewAuthHandler(authFlowService)
+	handler := transporthttp.NewAuthHandler(authFlowService, postMVPService)
 	router := transporthttp.NewRouterWithOptions(handler, routerOptions)
 
 	return authEndpointsFixture{
-		router:       router,
-		authService:  authService,
-		sessionRepo:  sessionRepo,
-		tokenService: tokenService,
-		clock:        clock,
+		router:              router,
+		authService:         authService,
+		sessionRepo:         sessionRepo,
+		tokenRepo:           tokenRepo,
+		notificationService: notificationService,
+		tokenService:        tokenService,
+		clock:               clock,
 	}
 }
 
@@ -874,6 +896,36 @@ func (r *inMemoryUserRepo) FindByID(_ context.Context, userID shared.UserID) (do
 	return domainidentity.User{}, appidentity.ErrUserNotFound
 }
 
+func (r *inMemoryUserRepo) UpdatePassword(_ context.Context, userID shared.UserID, passwordHash string, updatedAt time.Time) error {
+	for email, user := range r.byNormalizedEmail {
+		if user.ID != userID {
+			continue
+		}
+
+		user.PasswordHash = passwordHash
+		user.UpdatedAt = updatedAt
+		r.byNormalizedEmail[email] = user
+		return nil
+	}
+
+	return appidentity.ErrUserNotFound
+}
+
+func (r *inMemoryUserRepo) MarkEmailVerified(_ context.Context, userID shared.UserID, updatedAt time.Time) error {
+	for email, user := range r.byNormalizedEmail {
+		if user.ID != userID {
+			continue
+		}
+
+		user.EmailVerified = true
+		user.UpdatedAt = updatedAt
+		r.byNormalizedEmail[email] = user
+		return nil
+	}
+
+	return appidentity.ErrUserNotFound
+}
+
 type inMemorySessionRepo struct {
 	sessions []domainidentity.Session
 }
@@ -969,6 +1021,78 @@ func (r *inMemorySessionRepo) RevokeAllByUserID(_ context.Context, userID shared
 	return nil
 }
 
+type inMemoryOneTimeTokenRepo struct {
+	tokens []domainidentity.OneTimeToken
+}
+
+func newInMemoryOneTimeTokenRepo() *inMemoryOneTimeTokenRepo {
+	return &inMemoryOneTimeTokenRepo{
+		tokens: make([]domainidentity.OneTimeToken, 0, 8),
+	}
+}
+
+func (r *inMemoryOneTimeTokenRepo) Create(_ context.Context, token domainidentity.OneTimeToken) error {
+	for _, existing := range r.tokens {
+		if existing.TokenHash == token.TokenHash {
+			return fmt.Errorf("duplicate one-time token hash")
+		}
+	}
+
+	r.tokens = append(r.tokens, token)
+	return nil
+}
+
+func (r *inMemoryOneTimeTokenRepo) FindActiveByHash(
+	_ context.Context,
+	purpose domainidentity.OneTimeTokenPurpose,
+	tokenHash string,
+	now time.Time,
+) (domainidentity.OneTimeToken, error) {
+	for _, token := range r.tokens {
+		if token.Purpose != purpose || token.TokenHash != tokenHash {
+			continue
+		}
+		if token.UsedAt != nil || !token.ExpiresAt.After(now) {
+			continue
+		}
+		return token, nil
+	}
+
+	return domainidentity.OneTimeToken{}, appidentity.ErrOneTimeTokenNotFound
+}
+
+func (r *inMemoryOneTimeTokenRepo) MarkUsed(_ context.Context, tokenID shared.OneTimeTokenID, usedAt time.Time) error {
+	for i := range r.tokens {
+		if r.tokens[i].ID != tokenID {
+			continue
+		}
+		if r.tokens[i].UsedAt != nil || !r.tokens[i].ExpiresAt.After(usedAt) {
+			return appidentity.ErrOneTimeTokenNotFound
+		}
+
+		usedAtCopy := usedAt
+		r.tokens[i].UsedAt = &usedAtCopy
+		return nil
+	}
+
+	return appidentity.ErrOneTimeTokenNotFound
+}
+
+type captureAuthNotifications struct {
+	passwordResetTokens     []string
+	emailVerificationTokens []string
+}
+
+func (s *captureAuthNotifications) SendPasswordReset(_ context.Context, _ domainidentity.User, token string) error {
+	s.passwordResetTokens = append(s.passwordResetTokens, token)
+	return nil
+}
+
+func (s *captureAuthNotifications) SendEmailVerification(_ context.Context, _ domainidentity.User, token string) error {
+	s.emailVerificationTokens = append(s.emailVerificationTokens, token)
+	return nil
+}
+
 type sequenceUserIDGenerator struct {
 	next int
 }
@@ -985,6 +1109,15 @@ type sequenceSessionIDGenerator struct {
 func (g *sequenceSessionIDGenerator) NewSessionID() shared.SessionID {
 	g.next++
 	return shared.SessionID(fmt.Sprintf("session-%d", g.next))
+}
+
+type sequenceOneTimeTokenIDGenerator struct {
+	next int
+}
+
+func (g *sequenceOneTimeTokenIDGenerator) NewOneTimeTokenID() shared.OneTimeTokenID {
+	g.next++
+	return shared.OneTimeTokenID(fmt.Sprintf("otk-%d", g.next))
 }
 
 type mutableClock struct {
