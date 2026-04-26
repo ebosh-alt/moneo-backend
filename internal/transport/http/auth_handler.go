@@ -11,6 +11,7 @@ import (
 
 	appidentity "moneo/internal/app/identity"
 	domainidentity "moneo/internal/domain/identity"
+	"moneo/internal/domain/shared"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,8 @@ type AuthUseCase interface {
 	Refresh(ctx context.Context, input appidentity.RefreshInput) (appidentity.AuthTokens, error)
 	Logout(ctx context.Context, input appidentity.LogoutInput) error
 	LogoutAll(ctx context.Context, input appidentity.LogoutAllInput) error
+	ListActiveSessions(ctx context.Context, input appidentity.ListSessionsInput) ([]appidentity.UserSessionView, error)
+	RevokeSession(ctx context.Context, input appidentity.RevokeSessionInput) error
 }
 
 type authServiceAdapter struct {
@@ -51,6 +54,14 @@ func (a authServiceAdapter) Logout(ctx context.Context, input appidentity.Logout
 
 func (a authServiceAdapter) LogoutAll(ctx context.Context, input appidentity.LogoutAllInput) error {
 	return a.service.LogoutAll(ctx, input)
+}
+
+func (a authServiceAdapter) ListActiveSessions(ctx context.Context, input appidentity.ListSessionsInput) ([]appidentity.UserSessionView, error) {
+	return a.service.ListActiveSessions(ctx, input)
+}
+
+func (a authServiceAdapter) RevokeSession(ctx context.Context, input appidentity.RevokeSessionInput) error {
+	return a.service.RevokeSession(ctx, input)
 }
 
 type AuthHandler struct {
@@ -84,6 +95,20 @@ type meResponse struct {
 	Email         string    `json:"email"`
 	EmailVerified bool      `json:"email_verified"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type sessionsResponse struct {
+	Sessions []sessionResponse `json:"sessions"`
+}
+
+type sessionResponse struct {
+	ID         string     `json:"id"`
+	UserAgent  *string    `json:"user_agent"`
+	IP         *string    `json:"ip"`
+	DeviceName *string    `json:"device_name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
 }
 
 type errorResponse struct {
@@ -220,6 +245,69 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		EmailVerified: user.EmailVerified,
 		CreatedAt:     user.CreatedAt,
 	})
+}
+
+func (h *AuthHandler) Sessions(c *gin.Context) {
+	user, userOK := UserFromContext(c)
+	_, sessionOK := SessionFromContext(c)
+	if !userOK || !sessionOK {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
+		return
+	}
+
+	sessions, err := h.auth.ListActiveSessions(c.Request.Context(), appidentity.ListSessionsInput{
+		UserID: user.ID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
+		return
+	}
+
+	response := make([]sessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		response = append(response, sessionResponse{
+			ID:         string(session.ID),
+			UserAgent:  session.UserAgent,
+			IP:         session.IP,
+			DeviceName: session.DeviceName,
+			CreatedAt:  session.CreatedAt,
+			LastUsedAt: session.LastUsedAt,
+			ExpiresAt:  session.ExpiresAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, sessionsResponse{Sessions: response})
+}
+
+func (h *AuthHandler) RevokeSession(c *gin.Context) {
+	user, userOK := UserFromContext(c)
+	_, sessionOK := SessionFromContext(c)
+	if !userOK || !sessionOK {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
+		return
+	}
+
+	sessionID := strings.TrimSpace(c.Param("sessionId"))
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+		return
+	}
+
+	err := h.auth.RevokeSession(c.Request.Context(), appidentity.RevokeSessionInput{
+		UserID:    user.ID,
+		SessionID: shared.SessionID(sessionID),
+	})
+	if err != nil {
+		if errors.Is(err, appidentity.ErrSessionNotFound) {
+			c.JSON(http.StatusNotFound, errorResponse{Error: "session_not_found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func (h *AuthHandler) writeAuthError(c *gin.Context, err error) {

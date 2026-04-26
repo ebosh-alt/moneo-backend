@@ -497,6 +497,152 @@ func TestAuthMeReturnsCurrentUserWithoutSensitiveFields(t *testing.T) {
 	}
 }
 
+func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user1@example.com",
+		"password":         "StrongPassw0rd1!",
+		"password_confirm": "StrongPassw0rd1!",
+	}, nil)
+	var userOneRegisterResponse authResponse
+	decodeJSONResponse(t, userOneRegister, &userOneRegisterResponse)
+
+	userOneLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user1@example.com",
+		"password": "StrongPassw0rd1!",
+	}, nil)
+	var userOneLoginResponse authResponse
+	decodeJSONResponse(t, userOneLogin, &userOneLoginResponse)
+
+	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user2@example.com",
+		"password":         "StrongPassw0rd2!",
+		"password_confirm": "StrongPassw0rd2!",
+	}, nil)
+	var userTwoRegisterResponse authResponse
+	decodeJSONResponse(t, userTwoRegister, &userTwoRegisterResponse)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + userOneLoginResponse.AccessToken,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var response sessionsResponse
+	decodeJSONResponse(t, rec, &response)
+	if len(response.Sessions) != 2 {
+		t.Fatalf("expected 2 sessions for user1, got %d", len(response.Sessions))
+	}
+
+	userTwoRec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + userTwoRegisterResponse.AccessToken,
+	})
+	if userTwoRec.Code != http.StatusOK {
+		t.Fatalf("expected user2 status 200, got %d", userTwoRec.Code)
+	}
+
+	var userTwoResponse sessionsResponse
+	decodeJSONResponse(t, userTwoRec, &userTwoResponse)
+	if len(userTwoResponse.Sessions) != 1 {
+		t.Fatalf("expected 1 session for user2, got %d", len(userTwoResponse.Sessions))
+	}
+}
+
+func TestRevokeSessionEndpointDoesNotRevokeForeignSession(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user1@example.com",
+		"password":         "StrongPassw0rd1!",
+		"password_confirm": "StrongPassw0rd1!",
+	}, nil)
+	var userOneRegisterResponse authResponse
+	decodeJSONResponse(t, userOneRegister, &userOneRegisterResponse)
+
+	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user2@example.com",
+		"password":         "StrongPassw0rd2!",
+		"password_confirm": "StrongPassw0rd2!",
+	}, nil)
+	var userTwoRegisterResponse authResponse
+	decodeJSONResponse(t, userTwoRegister, &userTwoRegisterResponse)
+
+	ownerSessions := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + userOneRegisterResponse.AccessToken,
+	})
+	var ownerResponse sessionsResponse
+	decodeJSONResponse(t, ownerSessions, &ownerResponse)
+	targetSessionID := ownerResponse.Sessions[0].ID
+
+	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/"+targetSessionID, nil, map[string]string{
+		"Authorization": "Bearer " + userTwoRegisterResponse.AccessToken,
+	})
+	if revoke.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 for foreign session delete, got %d", revoke.Code)
+	}
+
+	ownerSessionsAfter := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + userOneRegisterResponse.AccessToken,
+	})
+	var ownerAfterResponse sessionsResponse
+	decodeJSONResponse(t, ownerSessionsAfter, &ownerAfterResponse)
+	if len(ownerAfterResponse.Sessions) != 1 {
+		t.Fatalf("expected owner's session to remain active, got %d active sessions", len(ownerAfterResponse.Sessions))
+	}
+}
+
+func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "StrongPassw0rd!",
+	}, nil)
+	var loginResponse authResponse
+	decodeJSONResponse(t, login, &loginResponse)
+
+	before := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	})
+	var beforeResponse sessionsResponse
+	decodeJSONResponse(t, before, &beforeResponse)
+	if len(beforeResponse.Sessions) != 2 {
+		t.Fatalf("expected 2 active sessions before revoke, got %d", len(beforeResponse.Sessions))
+	}
+
+	targetSessionID := beforeResponse.Sessions[0].ID
+
+	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/"+targetSessionID, nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	})
+	if revoke.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", revoke.Code)
+	}
+
+	after := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	})
+	var afterResponse sessionsResponse
+	decodeJSONResponse(t, after, &afterResponse)
+	if len(afterResponse.Sessions) != 1 {
+		t.Fatalf("expected 1 active session after revoke, got %d", len(afterResponse.Sessions))
+	}
+
+	if afterResponse.Sessions[0].ID == targetSessionID {
+		t.Fatal("revoked session must not appear in active sessions list")
+	}
+}
+
 type authEndpointsFixture struct {
 	router       http.Handler
 	authService  *appidentity.AuthService
@@ -667,6 +813,20 @@ type authResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
+type sessionsResponse struct {
+	Sessions []sessionResponse `json:"sessions"`
+}
+
+type sessionResponse struct {
+	ID         string     `json:"id"`
+	UserAgent  *string    `json:"user_agent"`
+	IP         *string    `json:"ip"`
+	DeviceName *string    `json:"device_name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -746,6 +906,25 @@ func (r *inMemorySessionRepo) FindByID(_ context.Context, sessionID shared.Sessi
 	}
 
 	return domainidentity.Session{}, appidentity.ErrSessionNotFound
+}
+
+func (r *inMemorySessionRepo) ListActiveByUserID(_ context.Context, userID shared.UserID, now time.Time) ([]domainidentity.Session, error) {
+	result := make([]domainidentity.Session, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		if session.UserID != userID {
+			continue
+		}
+		if session.RevokedAt != nil {
+			continue
+		}
+		if !session.ExpiresAt.After(now) {
+			continue
+		}
+
+		result = append(result, session)
+	}
+
+	return result, nil
 }
 
 func (r *inMemorySessionRepo) TouchLastUsedAt(_ context.Context, sessionID shared.SessionID, lastUsedAt time.Time) error {

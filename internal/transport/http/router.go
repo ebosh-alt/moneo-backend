@@ -13,9 +13,14 @@ func NewRouter(authHandler *AuthHandler, authMiddleware ...gin.HandlerFunc) *gin
 	router.POST("/auth/logout-all", authHandler.LogoutAll)
 
 	if len(authMiddleware) > 0 && authMiddleware[0] != nil {
-		router.GET("/auth/me", authMiddleware[0], authHandler.Me)
+		protectedAuth := router.Group("/auth", authMiddleware[0])
+		protectedAuth.GET("/me", authHandler.Me)
+		protectedAuth.GET("/sessions", authHandler.Sessions)
+		protectedAuth.DELETE("/sessions/:sessionId", authHandler.RevokeSession)
 	} else {
 		router.GET("/auth/me", authHandler.Me)
+		router.GET("/auth/sessions", authHandler.Sessions)
+		router.DELETE("/auth/sessions/:sessionId", authHandler.RevokeSession)
 	}
 
 	return router

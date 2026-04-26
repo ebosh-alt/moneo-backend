@@ -19,6 +19,9 @@ type Session struct {
 	ID               shared.SessionID
 	UserID           shared.UserID
 	RefreshTokenHash string
+	UserAgent        *string
+	IP               *string
+	DeviceName       *string
 	CreatedAt        time.Time
 	LastUsedAt       *time.Time
 	ExpiresAt        time.Time
@@ -49,6 +52,9 @@ func NewSession(
 		ID:               id,
 		UserID:           userID,
 		RefreshTokenHash: refreshTokenHash,
+		UserAgent:        nil,
+		IP:               nil,
+		DeviceName:       nil,
 		CreatedAt:        now,
 		LastUsedAt:       nil,
 		ExpiresAt:        expiresAt,

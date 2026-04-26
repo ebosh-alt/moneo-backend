@@ -17,6 +17,8 @@ var ErrInvalidAccessToken = errors.New("invalid access token")
 
 type SessionRepository interface {
 	Create(ctx context.Context, session domainidentity.Session) error
+	FindByID(ctx context.Context, sessionID shared.SessionID) (domainidentity.Session, error)
+	ListActiveByUserID(ctx context.Context, userID shared.UserID, now time.Time) ([]domainidentity.Session, error)
 	FindByRefreshTokenHash(ctx context.Context, refreshTokenHash string) (domainidentity.Session, error)
 	TouchLastUsedAt(ctx context.Context, sessionID shared.SessionID, lastUsedAt time.Time) error
 	RevokeByID(ctx context.Context, sessionID shared.SessionID, revokedAt time.Time) error
@@ -51,6 +53,25 @@ type LogoutInput struct {
 
 type LogoutAllInput struct {
 	AccessToken string
+}
+
+type ListSessionsInput struct {
+	UserID shared.UserID
+}
+
+type RevokeSessionInput struct {
+	UserID    shared.UserID
+	SessionID shared.SessionID
+}
+
+type UserSessionView struct {
+	ID         shared.SessionID
+	UserAgent  *string
+	IP         *string
+	DeviceName *string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	ExpiresAt  time.Time
 }
 
 type AuthFlowService struct {
@@ -111,6 +132,58 @@ func (s *AuthFlowService) LogoutAll(ctx context.Context, input LogoutAllInput) e
 
 	if err := s.sessions.RevokeAllByUserID(ctx, userID, s.clock.Now().UTC()); err != nil {
 		return fmt.Errorf("revoke all sessions by user id: %w", err)
+	}
+
+	return nil
+}
+
+func (s *AuthFlowService) ListActiveSessions(ctx context.Context, input ListSessionsInput) ([]UserSessionView, error) {
+	now := s.clock.Now().UTC()
+	sessions, err := s.sessions.ListActiveByUserID(ctx, input.UserID, now)
+	if err != nil {
+		return nil, fmt.Errorf("list active sessions by user id: %w", err)
+	}
+
+	result := make([]UserSessionView, 0, len(sessions))
+	for _, session := range sessions {
+		result = append(result, UserSessionView{
+			ID:         session.ID,
+			UserAgent:  session.UserAgent,
+			IP:         session.IP,
+			DeviceName: session.DeviceName,
+			CreatedAt:  session.CreatedAt,
+			LastUsedAt: session.LastUsedAt,
+			ExpiresAt:  session.ExpiresAt,
+		})
+	}
+
+	return result, nil
+}
+
+func (s *AuthFlowService) RevokeSession(ctx context.Context, input RevokeSessionInput) error {
+	session, err := s.sessions.FindByID(ctx, input.SessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrSessionNotFound
+		}
+
+		return fmt.Errorf("find session by id: %w", err)
+	}
+
+	if session.UserID != input.UserID {
+		return ErrSessionNotFound
+	}
+
+	now := s.clock.Now().UTC()
+	if session.RevokedAt != nil || !session.ExpiresAt.After(now) {
+		return ErrSessionNotFound
+	}
+
+	if err := s.sessions.RevokeByID(ctx, input.SessionID, now); err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return ErrSessionNotFound
+		}
+		return fmt.Errorf("revoke session by id: %w", err)
 	}
 
 	return nil

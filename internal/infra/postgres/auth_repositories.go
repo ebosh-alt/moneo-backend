@@ -175,11 +175,14 @@ INSERT INTO sessions (
 	id,
 	user_id,
 	refresh_token_hash,
+	user_agent,
+	ip,
+	device_name,
 	created_at,
 	expires_at,
 	revoked_at
 )
-VALUES ($1, $2, $3, $4, $5, $6)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 	if _, err := r.pool.Exec(
@@ -188,6 +191,9 @@ VALUES ($1, $2, $3, $4, $5, $6)
 		string(session.ID),
 		string(session.UserID),
 		session.RefreshTokenHash,
+		session.UserAgent,
+		session.IP,
+		session.DeviceName,
 		session.CreatedAt,
 		session.ExpiresAt,
 		session.RevokedAt,
@@ -208,6 +214,9 @@ SELECT
 	id::text,
 	user_id::text,
 	refresh_token_hash,
+	user_agent,
+	ip::text,
+	device_name,
 	created_at,
 	last_used_at,
 	expires_at,
@@ -221,6 +230,9 @@ LIMIT 1
 		id         string
 		userID     string
 		hash       string
+		userAgent  *string
+		ip         *string
+		deviceName *string
 		createdAt  time.Time
 		lastUsedAt *time.Time
 		expiresAt  time.Time
@@ -231,6 +243,9 @@ LIMIT 1
 		&id,
 		&userID,
 		&hash,
+		&userAgent,
+		&ip,
+		&deviceName,
 		&createdAt,
 		&lastUsedAt,
 		&expiresAt,
@@ -247,6 +262,9 @@ LIMIT 1
 		ID:               shared.SessionID(id),
 		UserID:           shared.UserID(userID),
 		RefreshTokenHash: hash,
+		UserAgent:        userAgent,
+		IP:               ip,
+		DeviceName:       deviceName,
 		CreatedAt:        createdAt,
 		LastUsedAt:       lastUsedAt,
 		ExpiresAt:        expiresAt,
@@ -260,6 +278,9 @@ SELECT
 	id::text,
 	user_id::text,
 	refresh_token_hash,
+	user_agent,
+	ip::text,
+	device_name,
 	created_at,
 	last_used_at,
 	expires_at,
@@ -273,6 +294,9 @@ LIMIT 1
 		id         string
 		userID     string
 		hash       string
+		userAgent  *string
+		ip         *string
+		deviceName *string
 		createdAt  time.Time
 		lastUsedAt *time.Time
 		expiresAt  time.Time
@@ -283,6 +307,9 @@ LIMIT 1
 		&id,
 		&userID,
 		&hash,
+		&userAgent,
+		&ip,
+		&deviceName,
 		&createdAt,
 		&lastUsedAt,
 		&expiresAt,
@@ -299,11 +326,90 @@ LIMIT 1
 		ID:               shared.SessionID(id),
 		UserID:           shared.UserID(userID),
 		RefreshTokenHash: hash,
+		UserAgent:        userAgent,
+		IP:               ip,
+		DeviceName:       deviceName,
 		CreatedAt:        createdAt,
 		LastUsedAt:       lastUsedAt,
 		ExpiresAt:        expiresAt,
 		RevokedAt:        revokedAt,
 	}, nil
+}
+
+func (r *AuthSessionRepository) ListActiveByUserID(ctx context.Context, userID shared.UserID, now time.Time) ([]domainidentity.Session, error) {
+	const query = `
+SELECT
+	id::text,
+	user_id::text,
+	refresh_token_hash,
+	user_agent,
+	ip::text,
+	device_name,
+	created_at,
+	last_used_at,
+	expires_at,
+	revoked_at
+FROM sessions
+WHERE user_id = $1
+  AND revoked_at IS NULL
+  AND expires_at > $2
+ORDER BY created_at DESC
+`
+
+	rows, err := r.pool.Query(ctx, query, string(userID), now)
+	if err != nil {
+		return nil, fmt.Errorf("select active sessions by user id: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]domainidentity.Session, 0, 4)
+	for rows.Next() {
+		var (
+			id            string
+			scannedUserID string
+			hash          string
+			userAgent     *string
+			ip            *string
+			deviceName    *string
+			createdAt     time.Time
+			lastUsedAt    *time.Time
+			expiresAt     time.Time
+			revokedAt     *time.Time
+		)
+
+		if err := rows.Scan(
+			&id,
+			&scannedUserID,
+			&hash,
+			&userAgent,
+			&ip,
+			&deviceName,
+			&createdAt,
+			&lastUsedAt,
+			&expiresAt,
+			&revokedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan active session: %w", err)
+		}
+
+		result = append(result, domainidentity.Session{
+			ID:               shared.SessionID(id),
+			UserID:           shared.UserID(scannedUserID),
+			RefreshTokenHash: hash,
+			UserAgent:        userAgent,
+			IP:               ip,
+			DeviceName:       deviceName,
+			CreatedAt:        createdAt,
+			LastUsedAt:       lastUsedAt,
+			ExpiresAt:        expiresAt,
+			RevokedAt:        revokedAt,
+		})
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("iterate active sessions rows: %w", rows.Err())
+	}
+
+	return result, nil
 }
 
 func (r *AuthSessionRepository) TouchLastUsedAt(ctx context.Context, sessionID shared.SessionID, lastUsedAt time.Time) error {
