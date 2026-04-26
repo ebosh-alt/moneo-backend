@@ -15,6 +15,7 @@ import (
 	"moneo/internal/domain/shared"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const (
@@ -34,6 +35,7 @@ type AuthUseCase interface {
 	Refresh(ctx context.Context, input appidentity.RefreshInput) (appidentity.AuthTokens, error)
 	Logout(ctx context.Context, input appidentity.LogoutInput) error
 	LogoutAll(ctx context.Context, input appidentity.LogoutAllInput) error
+	LogoutCurrent(ctx context.Context, input appidentity.LogoutCurrentInput) error
 	ListActiveSessions(ctx context.Context, input appidentity.ListSessionsInput) ([]appidentity.UserSessionView, error)
 	RevokeSession(ctx context.Context, input appidentity.RevokeSessionInput) error
 }
@@ -71,6 +73,10 @@ func (a authServiceAdapter) Logout(ctx context.Context, input appidentity.Logout
 
 func (a authServiceAdapter) LogoutAll(ctx context.Context, input appidentity.LogoutAllInput) error {
 	return a.service.LogoutAll(ctx, input)
+}
+
+func (a authServiceAdapter) LogoutCurrent(ctx context.Context, input appidentity.LogoutCurrentInput) error {
+	return a.service.LogoutCurrent(ctx, input)
 }
 
 func (a authServiceAdapter) ListActiveSessions(ctx context.Context, input appidentity.ListSessionsInput) ([]appidentity.UserSessionView, error) {
@@ -306,6 +312,16 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
 			return
 		}
+	} else {
+		accessToken := parseBearerToken(c.GetHeader("Authorization"))
+		if strings.TrimSpace(accessToken) != "" {
+			if err := h.auth.LogoutCurrent(c.Request.Context(), appidentity.LogoutCurrentInput{
+				AccessToken: accessToken,
+			}); err != nil && !errors.Is(err, appidentity.ErrInvalidAccessToken) {
+				c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
+				return
+			}
+		}
 	}
 
 	clearRefreshCookie(c)
@@ -388,7 +404,7 @@ func (h *AuthHandler) RevokeSession(c *gin.Context) {
 	}
 
 	sessionID := strings.TrimSpace(c.Param("sessionId"))
-	if sessionID == "" {
+	if sessionID == "" || !isUUID(sessionID) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
 		return
 	}
@@ -600,6 +616,11 @@ func validateResetPasswordRequest(request resetPasswordRequest) bool {
 
 func validateVerifyEmailRequest(request verifyEmailRequest) bool {
 	return strings.TrimSpace(request.Token) != "" && len(request.Token) <= maxOneTimeTokenLength
+}
+
+func isUUID(value string) bool {
+	_, err := uuid.Parse(value)
+	return err == nil
 }
 
 func decodeStrictJSONBody(c *gin.Context, target any) error {

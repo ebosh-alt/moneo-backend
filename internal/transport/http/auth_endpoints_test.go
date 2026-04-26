@@ -16,6 +16,8 @@ import (
 	"moneo/internal/domain/shared"
 	"moneo/internal/infra/security"
 	transporthttp "moneo/internal/transport/http"
+
+	"github.com/google/uuid"
 )
 
 func TestRegisterEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
@@ -315,6 +317,36 @@ func TestLogoutEndpointRevokesSessionAndClearsCookie(t *testing.T) {
 	}
 	if !session.RevokedAt.Equal(fixture.clock.Now()) {
 		t.Fatalf("expected revoked_at=%s, got %s", fixture.clock.Now(), *session.RevokedAt)
+	}
+}
+
+func TestLogoutEndpointRevokesCurrentSessionFromAccessTokenWithoutCookie(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("expected register status 201, got %d", register.Code)
+	}
+
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	logout := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout", nil, map[string]string{
+		"Authorization": "Bearer " + registerResponse.AccessToken,
+	})
+	if logout.Code != http.StatusOK {
+		t.Fatalf("expected logout status 200, got %d", logout.Code)
+	}
+
+	if len(fixture.sessionRepo.sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(fixture.sessionRepo.sessions))
+	}
+	if fixture.sessionRepo.sessions[0].RevokedAt == nil {
+		t.Fatal("expected current session to be revoked via access token")
 	}
 }
 
@@ -643,6 +675,25 @@ func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 	}
 }
 
+func TestRevokeSessionEndpointRejectsMalformedSessionID(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/not-a-uuid", nil, map[string]string{
+		"Authorization": "Bearer " + registerResponse.AccessToken,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed session id status 400, got %d", rec.Code)
+	}
+}
+
 type authEndpointsFixture struct {
 	router              http.Handler
 	authService         *appidentity.AuthService
@@ -697,6 +748,7 @@ func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transp
 		tokenService,
 		&sequenceOneTimeTokenIDGenerator{},
 		hasher,
+		nil,
 		clock,
 		notificationService,
 		notificationService,
@@ -710,6 +762,11 @@ func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transp
 	authMiddleware := transporthttp.NewAuthMiddleware(accessAuthService)
 	if routerOptions.AuthMiddleware == nil {
 		routerOptions.AuthMiddleware = authMiddleware
+	}
+	if routerOptions.SecurityMiddleware == nil {
+		cfg := transporthttp.DefaultAuthSecurityConfig()
+		cfg.RequireHTTPSInProduction = false
+		routerOptions.SecurityMiddleware = transporthttp.NewAuthSecurityMiddleware(cfg)
 	}
 
 	handler := transporthttp.NewAuthHandler(authFlowService, postMVPService)
@@ -989,6 +1046,9 @@ func (r *inMemorySessionRepo) ListActiveByUserID(_ context.Context, userID share
 func (r *inMemorySessionRepo) TouchLastUsedAt(_ context.Context, sessionID shared.SessionID, lastUsedAt time.Time) error {
 	for i := range r.sessions {
 		if r.sessions[i].ID == sessionID {
+			if r.sessions[i].RevokedAt != nil || !r.sessions[i].ExpiresAt.After(lastUsedAt) {
+				return appidentity.ErrSessionNotFound
+			}
 			lastUsedAtCopy := lastUsedAt
 			r.sessions[i].LastUsedAt = &lastUsedAtCopy
 			return nil
@@ -1107,8 +1167,7 @@ type sequenceSessionIDGenerator struct {
 }
 
 func (g *sequenceSessionIDGenerator) NewSessionID() shared.SessionID {
-	g.next++
-	return shared.SessionID(fmt.Sprintf("session-%d", g.next))
+	return shared.SessionID(uuid.NewString())
 }
 
 type sequenceOneTimeTokenIDGenerator struct {

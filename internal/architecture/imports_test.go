@@ -18,7 +18,7 @@ func TestDomainContextsDoNotImportEachOther(t *testing.T) {
 
 	internalDir := filepath.Dir(filepath.Dir(filename))
 	domainDir := filepath.Join(internalDir, "domain")
-	moduleDomainPath := "moneo/backend/internal/domain/"
+	moduleDomainPath := "moneo/internal/domain/"
 
 	err := filepath.WalkDir(domainDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {

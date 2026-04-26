@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	domainidentity "moneo/internal/domain/identity"
 	"moneo/internal/domain/shared"
@@ -65,6 +66,9 @@ func (s *AccessAuthService) Authenticate(ctx context.Context, accessToken string
 		return domainidentity.User{}, domainidentity.Session{}, ErrInvalidAccessToken
 	}
 	if session.RevokedAt != nil {
+		return domainidentity.User{}, domainidentity.Session{}, ErrInvalidAccessToken
+	}
+	if !session.ExpiresAt.After(time.Now().UTC()) {
 		return domainidentity.User{}, domainidentity.Session{}, ErrInvalidAccessToken
 	}
 

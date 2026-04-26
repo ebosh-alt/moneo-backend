@@ -22,20 +22,20 @@ services:
       context: .
     image: ${BACKEND_IMAGE:-sellers-accounts-backend}
     environment:
-      - APP_ENV=${APP_ENV:-prod}
+      - APP_ENV=${APP_ENV:-production}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-video}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-video}
       - POSTGRES_DBNAME=${POSTGRES_DBNAME:-accounts}
       - POSTGRES_SSLMODE=disable
+      - AUTH_JWT_SECRET=${AUTH_JWT_SECRET:-dev-insecure-secret-change-me}
       - SHOP_MEDIA_PATH=${SHOP_MEDIA_PATH:-/data}
     ports:
       - "8080:8080"
     volumes:
-      - ./config/config.${APP_ENV:-prod}.yaml:/app/config/config.${APP_ENV:-prod}.yaml:ro
+      - ./config/config.${APP_ENV:-production}.yaml:/app/config/config.${APP_ENV:-production}.yaml:ro
     restart: unless-stopped
 
 volumes:
   postgres_data:
-

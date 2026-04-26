@@ -37,7 +37,8 @@ INSERT INTO users (
 VALUES ($1, $2, $3, $4, $5, $6)
 `
 
-	if _, err := r.pool.Exec(
+	db := databaseFromContext(ctx, r.pool)
+	if _, err := db.Exec(
 		ctx,
 		query,
 		string(user.ID),
@@ -82,7 +83,8 @@ LIMIT 1
 		updatedAt        time.Time
 	)
 
-	if err := r.pool.QueryRow(ctx, query, normalizedEmail).Scan(
+	db := databaseFromContext(ctx, r.pool)
+	if err := db.QueryRow(ctx, query, normalizedEmail).Scan(
 		&id,
 		&email,
 		&storedNormalized,
@@ -134,7 +136,8 @@ LIMIT 1
 		updatedAt        time.Time
 	)
 
-	if err := r.pool.QueryRow(ctx, query, string(userID)).Scan(
+	db := databaseFromContext(ctx, r.pool)
+	if err := db.QueryRow(ctx, query, string(userID)).Scan(
 		&id,
 		&email,
 		&storedNormalized,
@@ -169,7 +172,8 @@ SET password_hash = $2,
 WHERE id = $1
 `
 
-	commandTag, err := r.pool.Exec(ctx, query, string(userID), passwordHash, updatedAt)
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(userID), passwordHash, updatedAt)
 	if err != nil {
 		return fmt.Errorf("update user password: %w", err)
 	}
@@ -188,7 +192,8 @@ SET email_verified = TRUE,
 WHERE id = $1
 `
 
-	commandTag, err := r.pool.Exec(ctx, query, string(userID), updatedAt)
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(userID), updatedAt)
 	if err != nil {
 		return fmt.Errorf("mark user email verified: %w", err)
 	}
@@ -223,7 +228,8 @@ INSERT INTO sessions (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
-	if _, err := r.pool.Exec(
+	db := databaseFromContext(ctx, r.pool)
+	if _, err := db.Exec(
 		ctx,
 		query,
 		string(session.ID),
@@ -277,7 +283,8 @@ LIMIT 1
 		revokedAt  *time.Time
 	)
 
-	if err := r.pool.QueryRow(ctx, query, refreshTokenHash).Scan(
+	db := databaseFromContext(ctx, r.pool)
+	if err := db.QueryRow(ctx, query, refreshTokenHash).Scan(
 		&id,
 		&userID,
 		&hash,
@@ -341,7 +348,8 @@ LIMIT 1
 		revokedAt  *time.Time
 	)
 
-	if err := r.pool.QueryRow(ctx, query, string(sessionID)).Scan(
+	db := databaseFromContext(ctx, r.pool)
+	if err := db.QueryRow(ctx, query, string(sessionID)).Scan(
 		&id,
 		&userID,
 		&hash,
@@ -394,7 +402,8 @@ WHERE user_id = $1
 ORDER BY created_at DESC
 `
 
-	rows, err := r.pool.Query(ctx, query, string(userID), now)
+	db := databaseFromContext(ctx, r.pool)
+	rows, err := db.Query(ctx, query, string(userID), now)
 	if err != nil {
 		return nil, fmt.Errorf("select active sessions by user id: %w", err)
 	}
@@ -455,9 +464,12 @@ func (r *AuthSessionRepository) TouchLastUsedAt(ctx context.Context, sessionID s
 UPDATE sessions
 SET last_used_at = $2
 WHERE id = $1
+  AND revoked_at IS NULL
+  AND expires_at > $2
 `
 
-	commandTag, err := r.pool.Exec(ctx, query, string(sessionID), lastUsedAt)
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(sessionID), lastUsedAt)
 	if err != nil {
 		return fmt.Errorf("update session last_used_at: %w", err)
 	}
@@ -476,7 +488,8 @@ WHERE id = $1
   AND revoked_at IS NULL
 `
 
-	commandTag, err := r.pool.Exec(ctx, query, string(sessionID), revokedAt)
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(sessionID), revokedAt)
 	if err != nil {
 		return fmt.Errorf("revoke session by id: %w", err)
 	}
@@ -496,7 +509,8 @@ WHERE user_id = $1
   AND expires_at > $2
 `
 
-	if _, err := r.pool.Exec(ctx, query, string(userID), revokedAt); err != nil {
+	db := databaseFromContext(ctx, r.pool)
+	if _, err := db.Exec(ctx, query, string(userID), revokedAt); err != nil {
 		return fmt.Errorf("revoke all sessions by user id: %w", err)
 	}
 
@@ -525,7 +539,8 @@ INSERT INTO auth_one_time_tokens (
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
-	if _, err := r.pool.Exec(
+	db := databaseFromContext(ctx, r.pool)
+	if _, err := db.Exec(
 		ctx,
 		query,
 		string(token.ID),
@@ -575,7 +590,8 @@ LIMIT 1
 		usedAt     *time.Time
 	)
 
-	if err := r.pool.QueryRow(ctx, query, string(purpose), tokenHash, now).Scan(
+	db := databaseFromContext(ctx, r.pool)
+	if err := db.QueryRow(ctx, query, string(purpose), tokenHash, now).Scan(
 		&id,
 		&userID,
 		&rawPurpose,
@@ -616,7 +632,8 @@ WHERE id = $1
   AND expires_at > $2
 `
 
-	commandTag, err := r.pool.Exec(ctx, query, string(tokenID), usedAt)
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(tokenID), usedAt)
 	if err != nil {
 		return fmt.Errorf("mark one-time token used: %w", err)
 	}

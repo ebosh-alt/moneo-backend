@@ -59,6 +59,10 @@ type OneTimeTokenIDGenerator interface {
 	NewOneTimeTokenID() shared.OneTimeTokenID
 }
 
+type PostMVPTxManager interface {
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type PasswordResetNotifier interface {
 	SendPasswordReset(ctx context.Context, user domainidentity.User, token string) error
 }
@@ -104,6 +108,7 @@ type AuthPostMVPService struct {
 	tokenIssuer               OneTimeTokenIssuer
 	tokenIDs                  OneTimeTokenIDGenerator
 	passwordHasher            PasswordHasher
+	txManager                 PostMVPTxManager
 	clock                     Clock
 	passwordResetNotifier     PasswordResetNotifier
 	emailVerificationNotifier EmailVerificationNotifier
@@ -117,6 +122,7 @@ func NewAuthPostMVPService(
 	tokenIssuer OneTimeTokenIssuer,
 	tokenIDs OneTimeTokenIDGenerator,
 	passwordHasher PasswordHasher,
+	txManager PostMVPTxManager,
 	clock Clock,
 	passwordResetNotifier PasswordResetNotifier,
 	emailVerificationNotifier EmailVerificationNotifier,
@@ -134,6 +140,9 @@ func NewAuthPostMVPService(
 	if emailVerificationNotifier == nil {
 		emailVerificationNotifier = noopEmailVerificationNotifier{}
 	}
+	if txManager == nil {
+		txManager = noopPostMVPTxManager{}
+	}
 
 	return &AuthPostMVPService{
 		users:                     users,
@@ -142,6 +151,7 @@ func NewAuthPostMVPService(
 		tokenIssuer:               tokenIssuer,
 		tokenIDs:                  tokenIDs,
 		passwordHasher:            passwordHasher,
+		txManager:                 txManager,
 		clock:                     clock,
 		passwordResetNotifier:     passwordResetNotifier,
 		emailVerificationNotifier: emailVerificationNotifier,
@@ -186,41 +196,43 @@ func (s *AuthPostMVPService) ResetPassword(ctx context.Context, input ResetPassw
 		return domainidentity.ErrPasswordConfirmMismatch
 	}
 
-	token, err := s.findActiveOneTimeToken(
-		ctx,
-		domainidentity.OneTimeTokenPurposePasswordReset,
-		input.Token,
-		ErrInvalidPasswordResetToken,
-	)
-	if err != nil {
-		return err
-	}
-
-	now := s.clock.Now().UTC()
-	if err := s.tokens.MarkUsed(ctx, token.ID, now); err != nil {
-		if errors.Is(err, ErrOneTimeTokenNotFound) {
-			return ErrInvalidPasswordResetToken
-		}
-		return fmt.Errorf("mark password reset token used: %w", err)
-	}
-
 	passwordHash, err := s.passwordHasher.Hash(input.Password)
 	if err != nil {
 		return fmt.Errorf("hash updated password: %w", err)
 	}
 
-	if err := s.users.UpdatePassword(ctx, token.UserID, passwordHash, now); err != nil {
-		if errors.Is(err, ErrUserNotFound) {
-			return ErrInvalidPasswordResetToken
+	return s.txManager.WithinTx(ctx, func(txCtx context.Context) error {
+		token, err := s.findActiveOneTimeToken(
+			txCtx,
+			domainidentity.OneTimeTokenPurposePasswordReset,
+			input.Token,
+			ErrInvalidPasswordResetToken,
+		)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("update user password: %w", err)
-	}
 
-	if err := s.sessions.RevokeAllByUserID(ctx, token.UserID, now); err != nil {
-		return fmt.Errorf("revoke all user sessions after password reset: %w", err)
-	}
+		now := s.clock.Now().UTC()
+		if err := s.users.UpdatePassword(txCtx, token.UserID, passwordHash, now); err != nil {
+			if errors.Is(err, ErrUserNotFound) {
+				return ErrInvalidPasswordResetToken
+			}
+			return fmt.Errorf("update user password: %w", err)
+		}
 
-	return nil
+		if err := s.sessions.RevokeAllByUserID(txCtx, token.UserID, now); err != nil {
+			return fmt.Errorf("revoke all user sessions after password reset: %w", err)
+		}
+
+		if err := s.tokens.MarkUsed(txCtx, token.ID, now); err != nil {
+			if errors.Is(err, ErrOneTimeTokenNotFound) {
+				return ErrInvalidPasswordResetToken
+			}
+			return fmt.Errorf("mark password reset token used: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func (s *AuthPostMVPService) SendVerificationEmail(ctx context.Context, input SendVerificationEmailInput) error {
@@ -252,32 +264,34 @@ func (s *AuthPostMVPService) VerifyEmail(ctx context.Context, input VerifyEmailI
 		return ErrInvalidEmailVerificationToken
 	}
 
-	token, err := s.findActiveOneTimeToken(
-		ctx,
-		domainidentity.OneTimeTokenPurposeEmailVerification,
-		input.Token,
-		ErrInvalidEmailVerificationToken,
-	)
-	if err != nil {
-		return err
-	}
-
-	now := s.clock.Now().UTC()
-	if err := s.tokens.MarkUsed(ctx, token.ID, now); err != nil {
-		if errors.Is(err, ErrOneTimeTokenNotFound) {
-			return ErrInvalidEmailVerificationToken
+	return s.txManager.WithinTx(ctx, func(txCtx context.Context) error {
+		token, err := s.findActiveOneTimeToken(
+			txCtx,
+			domainidentity.OneTimeTokenPurposeEmailVerification,
+			input.Token,
+			ErrInvalidEmailVerificationToken,
+		)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("mark email verification token used: %w", err)
-	}
 
-	if err := s.users.MarkEmailVerified(ctx, token.UserID, now); err != nil {
-		if errors.Is(err, ErrUserNotFound) {
-			return ErrInvalidEmailVerificationToken
+		now := s.clock.Now().UTC()
+		if err := s.users.MarkEmailVerified(txCtx, token.UserID, now); err != nil {
+			if errors.Is(err, ErrUserNotFound) {
+				return ErrInvalidEmailVerificationToken
+			}
+			return fmt.Errorf("mark user email verified: %w", err)
 		}
-		return fmt.Errorf("mark user email verified: %w", err)
-	}
 
-	return nil
+		if err := s.tokens.MarkUsed(txCtx, token.ID, now); err != nil {
+			if errors.Is(err, ErrOneTimeTokenNotFound) {
+				return ErrInvalidEmailVerificationToken
+			}
+			return fmt.Errorf("mark email verification token used: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func (s *AuthPostMVPService) createAndSendToken(
@@ -348,4 +362,10 @@ type noopEmailVerificationNotifier struct{}
 
 func (noopEmailVerificationNotifier) SendEmailVerification(context.Context, domainidentity.User, string) error {
 	return nil
+}
+
+type noopPostMVPTxManager struct{}
+
+func (noopPostMVPTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
 }

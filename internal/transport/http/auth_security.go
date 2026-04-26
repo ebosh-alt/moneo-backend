@@ -17,6 +17,7 @@ import (
 const (
 	envAppEnvironment = "APP_ENV"
 	appEnvProduction  = "production"
+	appEnvProd        = "prod"
 )
 
 type AuthRateLimitRule struct {
@@ -26,6 +27,8 @@ type AuthRateLimitRule struct {
 
 type AuthSecurityConfig struct {
 	RequireHTTPSInProduction bool
+	TrustForwardedHeaders    bool
+	TrustedProxyCIDRs        []string
 	RateLimits               map[string]AuthRateLimitRule
 	Logger                   *log.Logger
 }
@@ -54,7 +57,7 @@ var authHTTPSRequiredPaths = map[string]struct{}{
 
 func DefaultAuthSecurityConfig() AuthSecurityConfig {
 	return AuthSecurityConfig{
-		RequireHTTPSInProduction: strings.EqualFold(strings.TrimSpace(os.Getenv(envAppEnvironment)), appEnvProduction),
+		RequireHTTPSInProduction: isProductionEnvironment(strings.TrimSpace(os.Getenv(envAppEnvironment))),
 		RateLimits:               cloneRateLimitRules(defaultAuthRateLimits),
 	}
 }
@@ -70,6 +73,7 @@ func NewAuthSecurityMiddleware(cfg AuthSecurityConfig) gin.HandlerFunc {
 		rateLimits = cloneRateLimitRules(defaultAuthRateLimits)
 	}
 
+	trustedProxyNets := parseTrustedProxyNetworks(cfg.TrustedProxyCIDRs)
 	limiter := newAuthRateLimiter(rateLimits, time.Now)
 
 	return func(c *gin.Context) {
@@ -79,20 +83,21 @@ func NewAuthSecurityMiddleware(cfg AuthSecurityConfig) gin.HandlerFunc {
 			return
 		}
 
-		if cfg.RequireHTTPSInProduction && requiresHTTPS(path) && !isHTTPSRequest(c.Request) {
-			writeSecurityEvent(logger, c, "auth_https_required", http.StatusBadRequest)
+		clientKey := requestClientKey(c.Request, cfg.TrustForwardedHeaders, trustedProxyNets)
+		if cfg.RequireHTTPSInProduction && requiresHTTPS(path) && !isHTTPSRequest(c.Request, cfg.TrustForwardedHeaders, trustedProxyNets) {
+			writeSecurityEvent(logger, c, clientKey, "auth_https_required", http.StatusBadRequest)
 			c.AbortWithStatusJSON(http.StatusBadRequest, errorResponse{Error: "https_required"})
 			return
 		}
 
-		allowed, retryAfter := limiter.Allow(path, requestClientKey(c))
+		allowed, retryAfter := limiter.Allow(path, clientKey)
 		if !allowed {
 			retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
 			if retryAfterSeconds < 1 {
 				retryAfterSeconds = 1
 			}
 			c.Header("Retry-After", strconv.Itoa(retryAfterSeconds))
-			writeSecurityEvent(logger, c, "auth_rate_limited", http.StatusTooManyRequests)
+			writeSecurityEvent(logger, c, clientKey, "auth_rate_limited", http.StatusTooManyRequests)
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, errorResponse{Error: "rate_limited"})
 			return
 		}
@@ -100,7 +105,7 @@ func NewAuthSecurityMiddleware(cfg AuthSecurityConfig) gin.HandlerFunc {
 		c.Next()
 
 		if event, ok := suspiciousEvent(path, c.Writer.Status()); ok {
-			writeSecurityEvent(logger, c, event, c.Writer.Status())
+			writeSecurityEvent(logger, c, clientKey, event, c.Writer.Status())
 		}
 	}
 }
@@ -137,7 +142,7 @@ func suspiciousEvent(path string, statusCode int) (string, bool) {
 	return "", false
 }
 
-func writeSecurityEvent(logger *log.Logger, c *gin.Context, event string, statusCode int) {
+func writeSecurityEvent(logger *log.Logger, c *gin.Context, clientKey string, event string, statusCode int) {
 	userAgent := strings.TrimSpace(c.Request.UserAgent())
 	if len(userAgent) > 160 {
 		userAgent = userAgent[:160]
@@ -148,27 +153,36 @@ func writeSecurityEvent(logger *log.Logger, c *gin.Context, event string, status
 		event,
 		c.Request.Method,
 		c.Request.URL.Path,
-		requestClientKey(c),
+		clientKey,
 		statusCode,
 		userAgent,
 	)
 }
 
-func requestClientKey(c *gin.Context) string {
-	clientIP := strings.TrimSpace(c.ClientIP())
-	if clientIP != "" {
-		return clientIP
+func requestClientKey(request *http.Request, trustForwardedHeaders bool, trustedProxyNets []*net.IPNet) string {
+	if request == nil {
+		return "unknown"
 	}
 
-	host, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr))
+	if trustForwardedHeaders && requestFromTrustedProxy(request, trustedProxyNets) {
+		clientIP := forwardedForClientIP(request.Header.Get("X-Forwarded-For"))
+		if clientIP != "" {
+			return clientIP
+		}
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr))
 	if err == nil && host != "" {
 		return host
+	}
+	if strings.TrimSpace(request.RemoteAddr) != "" {
+		return strings.TrimSpace(request.RemoteAddr)
 	}
 
 	return "unknown"
 }
 
-func isHTTPSRequest(request *http.Request) bool {
+func isHTTPSRequest(request *http.Request, trustForwardedHeaders bool, trustedProxyNets []*net.IPNet) bool {
 	if request == nil {
 		return false
 	}
@@ -177,14 +191,16 @@ func isHTTPSRequest(request *http.Request) bool {
 		return true
 	}
 
-	if strings.EqualFold(firstHeaderToken(request.Header.Get("X-Forwarded-Proto")), "https") {
-		return true
-	}
-	if strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Forwarded-Ssl")), "on") {
-		return true
-	}
-	if strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Url-Scheme")), "https") {
-		return true
+	if trustForwardedHeaders && requestFromTrustedProxy(request, trustedProxyNets) {
+		if strings.EqualFold(firstHeaderToken(request.Header.Get("X-Forwarded-Proto")), "https") {
+			return true
+		}
+		if strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Forwarded-Ssl")), "on") {
+			return true
+		}
+		if strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Url-Scheme")), "https") {
+			return true
+		}
 	}
 
 	return false
@@ -197,6 +213,86 @@ func firstHeaderToken(value string) string {
 
 	parts := strings.Split(value, ",")
 	return strings.TrimSpace(parts[0])
+}
+
+func parseTrustedProxyNetworks(values []string) []*net.IPNet {
+	if len(values) == 0 {
+		return nil
+	}
+
+	networks := make([]*net.IPNet, 0, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+
+		if strings.Contains(value, "/") {
+			_, network, err := net.ParseCIDR(value)
+			if err == nil && network != nil {
+				networks = append(networks, network)
+			}
+			continue
+		}
+
+		ip := net.ParseIP(value)
+		if ip == nil {
+			continue
+		}
+		mask := net.CIDRMask(32, 32)
+		if ip.To4() == nil {
+			mask = net.CIDRMask(128, 128)
+		}
+		networks = append(networks, &net.IPNet{IP: ip, Mask: mask})
+	}
+
+	return networks
+}
+
+func requestFromTrustedProxy(request *http.Request, trustedProxyNets []*net.IPNet) bool {
+	if request == nil || len(trustedProxyNets) == 0 {
+		return false
+	}
+
+	host := strings.TrimSpace(request.RemoteAddr)
+	if host == "" {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil && parsedHost != "" {
+		host = parsedHost
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	for _, network := range trustedProxyNets {
+		if network != nil && network.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func forwardedForClientIP(headerValue string) string {
+	first := firstHeaderToken(headerValue)
+	if first == "" {
+		return ""
+	}
+
+	ip := net.ParseIP(first)
+	if ip == nil {
+		return ""
+	}
+
+	return ip.String()
+}
+
+func isProductionEnvironment(env string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(env))
+	return normalized == appEnvProduction || normalized == appEnvProd
 }
 
 func cloneRateLimitRules(source map[string]AuthRateLimitRule) map[string]AuthRateLimitRule {

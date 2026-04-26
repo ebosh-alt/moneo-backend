@@ -3,6 +3,7 @@ package http_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -66,6 +67,47 @@ func TestLoginEndpointRateLimitBlocksBruteForceAttempts(t *testing.T) {
 
 	if !strings.Contains(logBuffer.String(), "security_event=auth_rate_limited") {
 		t.Fatal("expected rate-limited security event in logs")
+	}
+}
+
+func TestLoginEndpointRateLimitIgnoresUntrustedForwardedFor(t *testing.T) {
+	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
+		SecurityMiddleware: transporthttp.NewAuthSecurityMiddleware(transporthttp.AuthSecurityConfig{
+			RateLimits: map[string]transporthttp.AuthRateLimitRule{
+				"/auth/login": {MaxAttempts: 2, Window: time.Minute},
+			},
+		}),
+	})
+
+	_, err := fixture.authService.Register(context.Background(), appidentity.RegisterInput{
+		Email:           "user@example.com",
+		Password:        "StrongPassw0rd!",
+		PasswordConfirm: "StrongPassw0rd!",
+	})
+	if err != nil {
+		t.Fatalf("register fixture user: %v", err)
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+			"email":    "user@example.com",
+			"password": "WrongPassw0rd!",
+		}, map[string]string{
+			"X-Forwarded-For": fmt.Sprintf("203.0.113.%d", attempt),
+		})
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected status 401, got %d", attempt, rec.Code)
+		}
+	}
+
+	blocked := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "WrongPassw0rd!",
+	}, map[string]string{
+		"X-Forwarded-For": "203.0.113.200",
+	})
+	if blocked.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d", blocked.Code)
 	}
 }
 
@@ -155,6 +197,35 @@ func TestAuthSecurityRequiresHTTPSInProduction(t *testing.T) {
 		t.Fatalf("expected https_required error, got %q", insecureResponse.Error)
 	}
 
+	forgedForwarded := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "StrongPassw0rd!",
+	}, map[string]string{
+		"X-Forwarded-Proto": "https",
+	})
+	if forgedForwarded.Code != http.StatusBadRequest {
+		t.Fatalf("expected forged forwarded status 400, got %d", forgedForwarded.Code)
+	}
+}
+
+func TestAuthSecurityAllowsTrustedForwardedProto(t *testing.T) {
+	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
+		SecurityMiddleware: transporthttp.NewAuthSecurityMiddleware(transporthttp.AuthSecurityConfig{
+			RequireHTTPSInProduction: true,
+			TrustForwardedHeaders:    true,
+			TrustedProxyCIDRs:        []string{"192.0.2.0/24"},
+		}),
+	})
+
+	_, err := fixture.authService.Register(context.Background(), appidentity.RegisterInput{
+		Email:           "user@example.com",
+		Password:        "StrongPassw0rd!",
+		PasswordConfirm: "StrongPassw0rd!",
+	})
+	if err != nil {
+		t.Fatalf("register fixture user: %v", err)
+	}
+
 	secure := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
@@ -167,4 +238,13 @@ func TestAuthSecurityRequiresHTTPSInProduction(t *testing.T) {
 
 	refreshCookie := findCookie(t, secure, transporthttp.RefreshCookieName)
 	assertRefreshCookieAttributes(t, refreshCookie)
+}
+
+func TestDefaultAuthSecurityConfigTreatsProdAsProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+
+	cfg := transporthttp.DefaultAuthSecurityConfig()
+	if !cfg.RequireHTTPSInProduction {
+		t.Fatal("expected APP_ENV=prod to enable production HTTPS requirement")
+	}
 }

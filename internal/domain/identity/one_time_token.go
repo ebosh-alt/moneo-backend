@@ -50,6 +50,9 @@ func NewOneTimeToken(
 	if strings.TrimSpace(string(purpose)) == "" {
 		return OneTimeToken{}, ErrOneTimeTokenPurposeRequired
 	}
+	if !isKnownOneTimeTokenPurpose(purpose) {
+		return OneTimeToken{}, ErrOneTimeTokenPurposeRequired
+	}
 	if strings.TrimSpace(tokenHash) == "" {
 		return OneTimeToken{}, ErrOneTimeTokenHashRequired
 	}
@@ -66,4 +69,13 @@ func NewOneTimeToken(
 		ExpiresAt: expiresAt,
 		UsedAt:    nil,
 	}, nil
+}
+
+func isKnownOneTimeTokenPurpose(purpose OneTimeTokenPurpose) bool {
+	switch purpose {
+	case OneTimeTokenPurposePasswordReset, OneTimeTokenPurposeEmailVerification:
+		return true
+	default:
+		return false
+	}
 }

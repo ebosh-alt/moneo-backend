@@ -55,6 +55,10 @@ type LogoutAllInput struct {
 	AccessToken string
 }
 
+type LogoutCurrentInput struct {
+	AccessToken string
+}
+
 type ListSessionsInput struct {
 	UserID shared.UserID
 }
@@ -132,6 +136,22 @@ func (s *AuthFlowService) LogoutAll(ctx context.Context, input LogoutAllInput) e
 
 	if err := s.sessions.RevokeAllByUserID(ctx, userID, s.clock.Now().UTC()); err != nil {
 		return fmt.Errorf("revoke all sessions by user id: %w", err)
+	}
+
+	return nil
+}
+
+func (s *AuthFlowService) LogoutCurrent(ctx context.Context, input LogoutCurrentInput) error {
+	_, sessionID, err := s.tokens.VerifyAccessTokenIdentity(input.AccessToken)
+	if err != nil {
+		return ErrInvalidAccessToken
+	}
+
+	if err := s.sessions.RevokeByID(ctx, sessionID, s.clock.Now().UTC()); err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return nil
+		}
+		return fmt.Errorf("revoke current session by access token: %w", err)
 	}
 
 	return nil
