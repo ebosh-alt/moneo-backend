@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"moneo/backend/internal/bootstrap"
+	"moneo/internal/bootstrap"
 )
 
 func main() {

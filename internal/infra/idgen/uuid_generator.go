@@ -1,0 +1,21 @@
+package idgen
+
+import (
+	"github.com/google/uuid"
+
+	"moneo/internal/domain/shared"
+)
+
+type UUIDGenerator struct{}
+
+func NewUUIDGenerator() UUIDGenerator {
+	return UUIDGenerator{}
+}
+
+func (UUIDGenerator) NewUserID() shared.UserID {
+	return shared.UserID(uuid.NewString())
+}
+
+func (UUIDGenerator) NewSessionID() shared.SessionID {
+	return shared.SessionID(uuid.NewString())
+}

@@ -46,12 +46,6 @@ type AccessTokenClaims struct {
 	ExpiresAt time.Time
 }
 
-type IssuedRefreshToken struct {
-	Token     string
-	Hash      string
-	ExpiresAt time.Time
-}
-
 type timeProvider interface {
 	Now() time.Time
 }
@@ -174,23 +168,28 @@ func (s *TokenService) VerifyAccessToken(token string) (AccessTokenClaims, error
 	}, nil
 }
 
-func (s *TokenService) IssueRefreshToken() (IssuedRefreshToken, error) {
+func (s *TokenService) VerifyAccessTokenIdentity(token string) (shared.UserID, shared.SessionID, error) {
+	claims, err := s.VerifyAccessToken(token)
+	if err != nil {
+		return "", "", err
+	}
+
+	return shared.UserID(claims.Subject), shared.SessionID(claims.SessionID), nil
+}
+
+func (s *TokenService) IssueRefreshToken() (token string, hash string, expiresAt time.Time, err error) {
 	rawToken := make([]byte, 32)
 	if _, err := rand.Read(rawToken); err != nil {
-		return IssuedRefreshToken{}, fmt.Errorf("generate refresh token: %w", err)
+		return "", "", time.Time{}, fmt.Errorf("generate refresh token: %w", err)
 	}
 
-	token := base64.RawURLEncoding.EncodeToString(rawToken)
-	hash, err := s.HashRefreshToken(token)
+	token = base64.RawURLEncoding.EncodeToString(rawToken)
+	hash, err = s.HashRefreshToken(token)
 	if err != nil {
-		return IssuedRefreshToken{}, err
+		return "", "", time.Time{}, err
 	}
 
-	return IssuedRefreshToken{
-		Token:     token,
-		Hash:      hash,
-		ExpiresAt: s.clock.Now().UTC().Add(s.config.RefreshTokenTTL),
-	}, nil
+	return token, hash, s.clock.Now().UTC().Add(s.config.RefreshTokenTTL), nil
 }
 
 func (s *TokenService) HashRefreshToken(refreshToken string) (string, error) {
@@ -223,6 +222,10 @@ func (s *TokenService) signJWT(signingInput string) []byte {
 	mac := hmac.New(sha256.New, []byte(s.config.JWTSecret))
 	mac.Write([]byte(signingInput))
 	return mac.Sum(nil)
+}
+
+func (s *TokenService) AccessTokenTTL() time.Duration {
+	return s.config.AccessTokenTTL
 }
 
 type jwtHeader struct {

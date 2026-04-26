@@ -138,25 +138,25 @@ func TestTokenServiceIssueRefreshTokenAndHashFlow(t *testing.T) {
 		t.Fatalf("new token service: %v", err)
 	}
 
-	issued, err := service.IssueRefreshToken()
+	token, hash, expiresAt, err := service.IssueRefreshToken()
 	if err != nil {
 		t.Fatalf("issue refresh token: %v", err)
 	}
 
-	if strings.Count(issued.Token, ".") == 2 {
+	if strings.Count(token, ".") == 2 {
 		t.Fatal("refresh token must be opaque and not JWT")
 	}
-	if issued.Hash == issued.Token {
+	if hash == token {
 		t.Fatal("refresh token hash must differ from raw token")
 	}
-	if strings.Contains(issued.Hash, issued.Token) {
+	if strings.Contains(hash, token) {
 		t.Fatal("refresh token hash must not include raw token")
 	}
-	if issued.ExpiresAt.Sub(now) != 30*24*time.Hour {
-		t.Fatalf("expected 30d refresh lifetime, got %s", issued.ExpiresAt.Sub(now))
+	if expiresAt.Sub(now) != 30*24*time.Hour {
+		t.Fatalf("expected 30d refresh lifetime, got %s", expiresAt.Sub(now))
 	}
 
-	ok, err := service.VerifyRefreshTokenHash(issued.Token, issued.Hash)
+	ok, err := service.VerifyRefreshTokenHash(token, hash)
 	if err != nil {
 		t.Fatalf("verify refresh token hash: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestTokenServiceIssueRefreshTokenAndHashFlow(t *testing.T) {
 		t.Fatal("expected refresh token hash verification to pass")
 	}
 
-	ok, err = service.VerifyRefreshTokenHash("other-token", issued.Hash)
+	ok, err = service.VerifyRefreshTokenHash("other-token", hash)
 	if err != nil {
 		t.Fatalf("verify refresh token hash with wrong token: %v", err)
 	}

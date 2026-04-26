@@ -1,0 +1,682 @@
+package http_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	appidentity "moneo/internal/app/identity"
+	domainidentity "moneo/internal/domain/identity"
+	"moneo/internal/domain/shared"
+	"moneo/internal/infra/security"
+	transporthttp "moneo/internal/transport/http"
+)
+
+func TestRegisterEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "User@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	var response authResponse
+	decodeJSONResponse(t, rec, &response)
+	if strings.TrimSpace(response.AccessToken) == "" {
+		t.Fatal("access_token must not be empty")
+	}
+	if response.ExpiresIn != 900 {
+		t.Fatalf("expected expires_in=900, got %d", response.ExpiresIn)
+	}
+
+	refreshCookie := findCookie(t, rec, transporthttp.RefreshCookieName)
+	assertRefreshCookieAttributes(t, refreshCookie)
+
+	if len(fixture.sessionRepo.sessions) != 1 {
+		t.Fatalf("expected 1 session stored, got %d", len(fixture.sessionRepo.sessions))
+	}
+
+	expectedHash, err := fixture.tokenService.HashRefreshToken(refreshCookie.Value)
+	if err != nil {
+		t.Fatalf("hash refresh token from cookie: %v", err)
+	}
+
+	storedSession := fixture.sessionRepo.sessions[0]
+	if storedSession.RefreshTokenHash != expectedHash {
+		t.Fatalf("expected stored refresh hash %q, got %q", expectedHash, storedSession.RefreshTokenHash)
+	}
+	if storedSession.RefreshTokenHash == refreshCookie.Value {
+		t.Fatal("stored refresh hash must not equal raw refresh token")
+	}
+}
+
+func TestLoginEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	_, err := fixture.authService.Register(context.Background(), appidentity.RegisterInput{
+		Email:           "user@example.com",
+		Password:        "StrongPassw0rd!",
+		PasswordConfirm: "StrongPassw0rd!",
+	})
+	if err != nil {
+		t.Fatalf("register fixture user: %v", err)
+	}
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "StrongPassw0rd!",
+	}, nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var response authResponse
+	decodeJSONResponse(t, rec, &response)
+	if strings.TrimSpace(response.AccessToken) == "" {
+		t.Fatal("access_token must not be empty")
+	}
+	if response.ExpiresIn != 900 {
+		t.Fatalf("expected expires_in=900, got %d", response.ExpiresIn)
+	}
+
+	refreshCookie := findCookie(t, rec, transporthttp.RefreshCookieName)
+	assertRefreshCookieAttributes(t, refreshCookie)
+
+	if len(fixture.sessionRepo.sessions) != 1 {
+		t.Fatalf("expected 1 session stored, got %d", len(fixture.sessionRepo.sessions))
+	}
+
+	expectedHash, err := fixture.tokenService.HashRefreshToken(refreshCookie.Value)
+	if err != nil {
+		t.Fatalf("hash refresh token from cookie: %v", err)
+	}
+
+	storedSession := fixture.sessionRepo.sessions[0]
+	if storedSession.RefreshTokenHash != expectedHash {
+		t.Fatalf("expected stored refresh hash %q, got %q", expectedHash, storedSession.RefreshTokenHash)
+	}
+}
+
+func TestRegisterEndpointRejectsDuplicateEmail(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	first := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("expected first register status 201, got %d", first.Code)
+	}
+
+	second := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "USER@example.com",
+		"password":         "AnotherStrongPassw0rd!",
+		"password_confirm": "AnotherStrongPassw0rd!",
+	}, nil)
+	if second.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate register status 409, got %d", second.Code)
+	}
+
+	var errResponse errorResponse
+	decodeJSONResponse(t, second, &errResponse)
+	if errResponse.Error != "duplicate_email" {
+		t.Fatalf("expected duplicate_email error, got %q", errResponse.Error)
+	}
+}
+
+func TestLoginEndpointRejectsInvalidCredentials(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	_, err := fixture.authService.Register(context.Background(), appidentity.RegisterInput{
+		Email:           "user@example.com",
+		Password:        "StrongPassw0rd!",
+		PasswordConfirm: "StrongPassw0rd!",
+	})
+	if err != nil {
+		t.Fatalf("register fixture user: %v", err)
+	}
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "WrongPassw0rd!",
+	}, nil)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var errResponse errorResponse
+	decodeJSONResponse(t, rec, &errResponse)
+	if errResponse.Error != "invalid_credentials" {
+		t.Fatalf("expected invalid_credentials error, got %q", errResponse.Error)
+	}
+}
+
+func TestRefreshEndpointUpdatesAccessTokenAndLastUsedAt(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	if fixture.sessionRepo.sessions[0].LastUsedAt != nil {
+		t.Fatal("expected last_used_at to be nil before refresh")
+	}
+
+	fixture.clock.Advance(2 * time.Minute)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var response authResponse
+	decodeJSONResponse(t, rec, &response)
+	if strings.TrimSpace(response.AccessToken) == "" {
+		t.Fatal("access_token must not be empty")
+	}
+	if response.ExpiresIn != 900 {
+		t.Fatalf("expected expires_in=900, got %d", response.ExpiresIn)
+	}
+
+	refreshedCookie := findCookie(t, rec, transporthttp.RefreshCookieName)
+	assertRefreshCookieAttributes(t, refreshedCookie)
+	if refreshedCookie.Value != refreshCookie.Value {
+		t.Fatal("refresh flow via cookie must keep the same refresh token")
+	}
+
+	lastUsedAt := fixture.sessionRepo.sessions[0].LastUsedAt
+	if lastUsedAt == nil {
+		t.Fatal("expected last_used_at to be updated")
+	}
+	if !lastUsedAt.Equal(fixture.clock.Now()) {
+		t.Fatalf("expected last_used_at=%s, got %s", fixture.clock.Now(), *lastUsedAt)
+	}
+}
+
+func TestRefreshEndpointAcceptsBodyTokenForMacOSFlow(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", map[string]any{
+		"refresh_token": refreshCookie.Value,
+	}, nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var response authResponse
+	decodeJSONResponse(t, rec, &response)
+	if strings.TrimSpace(response.AccessToken) == "" {
+		t.Fatal("access_token must not be empty")
+	}
+
+	if hasCookie(rec, transporthttp.RefreshCookieName) {
+		t.Fatal("body-based refresh must not set refresh cookie")
+	}
+}
+
+func TestRefreshEndpointRejectsRevokedSession(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	now := fixture.clock.Now()
+	fixture.sessionRepo.sessions[0].RevokedAt = &now
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var response errorResponse
+	decodeJSONResponse(t, rec, &response)
+	if response.Error != "invalid_refresh_token" {
+		t.Fatalf("expected invalid_refresh_token, got %q", response.Error)
+	}
+}
+
+func TestRefreshEndpointRejectsExpiredSession(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	session := fixture.sessionRepo.sessions[0]
+	fixture.clock.Set(session.ExpiresAt.Add(time.Second))
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var response errorResponse
+	decodeJSONResponse(t, rec, &response)
+	if response.Error != "invalid_refresh_token" {
+		t.Fatalf("expected invalid_refresh_token, got %q", response.Error)
+	}
+}
+
+func TestLogoutEndpointRevokesSessionAndClearsCookie(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	fixture.clock.Advance(5 * time.Minute)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout", nil, nil, refreshCookie)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	clearedCookie := findCookie(t, rec, transporthttp.RefreshCookieName)
+	assertClearedRefreshCookie(t, clearedCookie)
+
+	session := fixture.sessionRepo.sessions[0]
+	if session.RevokedAt == nil {
+		t.Fatal("expected session to be revoked")
+	}
+	if !session.RevokedAt.Equal(fixture.clock.Now()) {
+		t.Fatalf("expected revoked_at=%s, got %s", fixture.clock.Now(), *session.RevokedAt)
+	}
+}
+
+func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+	firstRefreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
+
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		"email":    "user@example.com",
+		"password": "StrongPassw0rd!",
+	}, nil)
+	secondRefreshCookie := findCookie(t, login, transporthttp.RefreshCookieName)
+
+	var loginResponse authResponse
+	decodeJSONResponse(t, login, &loginResponse)
+
+	if len(fixture.sessionRepo.sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(fixture.sessionRepo.sessions))
+	}
+
+	logoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	}, secondRefreshCookie)
+	if logoutAll.Code != http.StatusOK {
+		t.Fatalf("expected first logout-all status 200, got %d", logoutAll.Code)
+	}
+
+	clearedCookie := findCookie(t, logoutAll, transporthttp.RefreshCookieName)
+	assertClearedRefreshCookie(t, clearedCookie)
+
+	for i, session := range fixture.sessionRepo.sessions {
+		if session.RevokedAt == nil {
+			t.Fatalf("session %d must be revoked", i)
+		}
+	}
+
+	refreshAfterLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, firstRefreshCookie)
+	if refreshAfterLogoutAll.Code != http.StatusUnauthorized {
+		t.Fatalf("expected refresh with revoked session status 401, got %d", refreshAfterLogoutAll.Code)
+	}
+
+	secondLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	}, nil)
+	if secondLogoutAll.Code != http.StatusOK {
+		t.Fatalf("expected second logout-all status 200, got %d", secondLogoutAll.Code)
+	}
+
+	fixture.clock.Advance(16 * time.Minute)
+	expiredAccessTokenCall := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+		"Authorization": "Bearer " + loginResponse.AccessToken,
+	}, nil)
+	if expiredAccessTokenCall.Code != http.StatusUnauthorized {
+		t.Fatalf("expected expired access token status 401, got %d", expiredAccessTokenCall.Code)
+	}
+
+	var expiredResponse errorResponse
+	decodeJSONResponse(t, expiredAccessTokenCall, &expiredResponse)
+	if expiredResponse.Error != "invalid_access_token" {
+		t.Fatalf("expected invalid_access_token, got %q", expiredResponse.Error)
+	}
+}
+
+type authEndpointsFixture struct {
+	router       http.Handler
+	authService  *appidentity.AuthService
+	sessionRepo  *inMemorySessionRepo
+	tokenService *security.TokenService
+	clock        *mutableClock
+}
+
+func newAuthEndpointsFixture(t *testing.T) authEndpointsFixture {
+	t.Helper()
+
+	clock := &mutableClock{now: time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)}
+	userRepo := newInMemoryUserRepo()
+	sessionRepo := newInMemorySessionRepo()
+	hasher := security.NewArgon2IDHasher(security.DefaultArgon2IDConfig())
+	authService := appidentity.NewAuthService(
+		userRepo,
+		hasher,
+		&sequenceUserIDGenerator{},
+		clock,
+	)
+
+	tokenService, err := security.NewTokenService(security.TokenServiceConfig{
+		AccessTokenTTL:  15 * time.Minute,
+		RefreshTokenTTL: 30 * 24 * time.Hour,
+		JWTSecret:       "test-jwt-secret",
+	}, clock)
+	if err != nil {
+		t.Fatalf("new token service: %v", err)
+	}
+
+	authFlowService := appidentity.NewAuthFlowService(
+		authService,
+		sessionRepo,
+		&sequenceSessionIDGenerator{},
+		tokenService,
+		clock,
+	)
+
+	handler := transporthttp.NewAuthHandler(authFlowService)
+	router := transporthttp.NewRouter(handler)
+
+	return authEndpointsFixture{
+		router:       router,
+		authService:  authService,
+		sessionRepo:  sessionRepo,
+		tokenService: tokenService,
+		clock:        clock,
+	}
+}
+
+func performJSONRequest(
+	t *testing.T,
+	handler http.Handler,
+	method string,
+	path string,
+	body any,
+	headers map[string]string,
+	cookies ...*http.Cookie,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var requestBody bytes.Buffer
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		requestBody.Write(payload)
+	}
+
+	req := httptest.NewRequest(method, path, &requestBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	for _, cookie := range cookies {
+		if cookie == nil {
+			continue
+		}
+		req.AddCookie(cookie)
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeJSONResponse(t *testing.T, rec *httptest.ResponseRecorder, out any) {
+	t.Helper()
+	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+		t.Fatalf("decode response body %q: %v", rec.Body.String(), err)
+	}
+}
+
+func findCookie(t *testing.T, rec *httptest.ResponseRecorder, name string) *http.Cookie {
+	t.Helper()
+
+	resp := rec.Result()
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+
+	t.Fatalf("cookie %q not found in response", name)
+	return nil
+}
+
+func hasCookie(rec *httptest.ResponseRecorder, name string) bool {
+	resp := rec.Result()
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == name {
+			return true
+		}
+	}
+
+	return false
+}
+
+func assertRefreshCookieAttributes(t *testing.T, cookie *http.Cookie) {
+	t.Helper()
+
+	if cookie.Value == "" {
+		t.Fatal("refresh cookie value must not be empty")
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("refresh cookie must be HttpOnly")
+	}
+	if !cookie.Secure {
+		t.Fatal("refresh cookie must be Secure")
+	}
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("expected SameSite=Lax, got %v", cookie.SameSite)
+	}
+	if cookie.Path != "/auth/refresh" {
+		t.Fatalf("expected Path=/auth/refresh, got %q", cookie.Path)
+	}
+	if cookie.MaxAge != 2_592_000 {
+		t.Fatalf("expected Max-Age=2592000, got %d", cookie.MaxAge)
+	}
+}
+
+func assertClearedRefreshCookie(t *testing.T, cookie *http.Cookie) {
+	t.Helper()
+
+	if cookie.Name != transporthttp.RefreshCookieName {
+		t.Fatalf("expected cookie name %q, got %q", transporthttp.RefreshCookieName, cookie.Name)
+	}
+	if cookie.Value != "" {
+		t.Fatalf("expected empty cookie value on clear, got %q", cookie.Value)
+	}
+	if cookie.MaxAge >= 0 {
+		t.Fatalf("expected Max-Age < 0 for clear, got %d", cookie.MaxAge)
+	}
+	if cookie.Path != "/auth/refresh" {
+		t.Fatalf("expected Path=/auth/refresh, got %q", cookie.Path)
+	}
+}
+
+type authResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+type inMemoryUserRepo struct {
+	byNormalizedEmail map[string]domainidentity.User
+}
+
+func newInMemoryUserRepo() *inMemoryUserRepo {
+	return &inMemoryUserRepo{byNormalizedEmail: map[string]domainidentity.User{}}
+}
+
+func (r *inMemoryUserRepo) Create(_ context.Context, user domainidentity.User) error {
+	if _, exists := r.byNormalizedEmail[user.NormalizedEmail]; exists {
+		return appidentity.ErrDuplicateEmail
+	}
+
+	r.byNormalizedEmail[user.NormalizedEmail] = user
+	return nil
+}
+
+func (r *inMemoryUserRepo) FindByNormalizedEmail(_ context.Context, normalizedEmail string) (domainidentity.User, error) {
+	user, ok := r.byNormalizedEmail[normalizedEmail]
+	if !ok {
+		return domainidentity.User{}, appidentity.ErrUserNotFound
+	}
+
+	return user, nil
+}
+
+type inMemorySessionRepo struct {
+	sessions []domainidentity.Session
+}
+
+func newInMemorySessionRepo() *inMemorySessionRepo {
+	return &inMemorySessionRepo{
+		sessions: make([]domainidentity.Session, 0, 8),
+	}
+}
+
+func (r *inMemorySessionRepo) Create(_ context.Context, session domainidentity.Session) error {
+	for _, existing := range r.sessions {
+		if existing.RefreshTokenHash == session.RefreshTokenHash && existing.RevokedAt == nil {
+			return appidentity.ErrDuplicateSessionRefreshToken
+		}
+	}
+
+	r.sessions = append(r.sessions, session)
+	return nil
+}
+
+func (r *inMemorySessionRepo) FindByRefreshTokenHash(_ context.Context, refreshTokenHash string) (domainidentity.Session, error) {
+	for _, session := range r.sessions {
+		if session.RefreshTokenHash == refreshTokenHash {
+			return session, nil
+		}
+	}
+
+	return domainidentity.Session{}, appidentity.ErrSessionNotFound
+}
+
+func (r *inMemorySessionRepo) TouchLastUsedAt(_ context.Context, sessionID shared.SessionID, lastUsedAt time.Time) error {
+	for i := range r.sessions {
+		if r.sessions[i].ID == sessionID {
+			lastUsedAtCopy := lastUsedAt
+			r.sessions[i].LastUsedAt = &lastUsedAtCopy
+			return nil
+		}
+	}
+
+	return appidentity.ErrSessionNotFound
+}
+
+func (r *inMemorySessionRepo) RevokeByID(_ context.Context, sessionID shared.SessionID, revokedAt time.Time) error {
+	for i := range r.sessions {
+		if r.sessions[i].ID == sessionID {
+			revokedAtCopy := revokedAt
+			r.sessions[i].RevokedAt = &revokedAtCopy
+			return nil
+		}
+	}
+
+	return appidentity.ErrSessionNotFound
+}
+
+func (r *inMemorySessionRepo) RevokeAllByUserID(_ context.Context, userID shared.UserID, revokedAt time.Time) error {
+	for i := range r.sessions {
+		if r.sessions[i].UserID == userID && r.sessions[i].RevokedAt == nil && r.sessions[i].ExpiresAt.After(revokedAt) {
+			revokedAtCopy := revokedAt
+			r.sessions[i].RevokedAt = &revokedAtCopy
+		}
+	}
+
+	return nil
+}
+
+type sequenceUserIDGenerator struct {
+	next int
+}
+
+func (g *sequenceUserIDGenerator) NewUserID() shared.UserID {
+	g.next++
+	return shared.UserID(fmt.Sprintf("user-%d", g.next))
+}
+
+type sequenceSessionIDGenerator struct {
+	next int
+}
+
+func (g *sequenceSessionIDGenerator) NewSessionID() shared.SessionID {
+	g.next++
+	return shared.SessionID(fmt.Sprintf("session-%d", g.next))
+}
+
+type mutableClock struct {
+	now time.Time
+}
+
+func (c *mutableClock) Now() time.Time {
+	return c.now
+}
+
+func (c *mutableClock) Advance(duration time.Duration) {
+	c.now = c.now.Add(duration)
+}
+
+func (c *mutableClock) Set(now time.Time) {
+	c.now = now
+}
