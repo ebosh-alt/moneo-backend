@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,10 @@ const (
 	RefreshCookieName          = "refresh_token"
 	refreshCookiePath          = "/auth/refresh"
 	refreshCookieMaxAgeSeconds = 2_592_000
+	maxAuthJSONBodyBytes       = 8 * 1024
+	maxEmailLength             = 320
+	maxPasswordLength          = 1024
+	maxRefreshTokenLength      = 4096
 )
 
 type AuthUseCase interface {
@@ -117,7 +122,7 @@ type errorResponse struct {
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	var request registerRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := decodeStrictJSONBody(c, &request); err != nil || !validateRegisterRequest(request) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
 		return
 	}
@@ -141,7 +146,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 func (h *AuthHandler) Login(c *gin.Context) {
 	var request loginRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := decodeStrictJSONBody(c, &request); err != nil || !validateLoginRequest(request) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
 		return
 	}
@@ -369,20 +374,94 @@ func extractRefreshToken(c *gin.Context) (refreshToken string, fromCookie bool, 
 		return value, true, nil
 	}
 
-	payload, readErr := io.ReadAll(c.Request.Body)
+	payload, readErr := readRequestPayload(c.Request.Body, maxAuthJSONBodyBytes)
 	if readErr != nil {
 		return "", false, readErr
 	}
-	if len(strings.TrimSpace(string(payload))) == 0 {
+	if len(bytes.TrimSpace(payload)) == 0 {
 		return "", false, nil
 	}
 
 	var request struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	if unmarshalErr := json.Unmarshal(payload, &request); unmarshalErr != nil {
+	if unmarshalErr := decodeStrictJSONPayload(payload, &request); unmarshalErr != nil {
 		return "", false, unmarshalErr
+	}
+	if len(request.RefreshToken) > maxRefreshTokenLength {
+		return "", false, errors.New("refresh token is too long")
 	}
 
 	return request.RefreshToken, false, nil
+}
+
+func validateRegisterRequest(request registerRequest) bool {
+	email := strings.TrimSpace(request.Email)
+	if email == "" || len(email) > maxEmailLength {
+		return false
+	}
+	if len(request.Password) == 0 || len(request.Password) > maxPasswordLength {
+		return false
+	}
+	if len(request.PasswordConfirm) == 0 || len(request.PasswordConfirm) > maxPasswordLength {
+		return false
+	}
+
+	return true
+}
+
+func validateLoginRequest(request loginRequest) bool {
+	email := strings.TrimSpace(request.Email)
+	if email == "" || len(email) > maxEmailLength {
+		return false
+	}
+	if len(request.Password) == 0 || len(request.Password) > maxPasswordLength {
+		return false
+	}
+
+	return true
+}
+
+func decodeStrictJSONBody(c *gin.Context, target any) error {
+	payload, err := readRequestPayload(c.Request.Body, maxAuthJSONBodyBytes)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return io.EOF
+	}
+
+	return decodeStrictJSONPayload(payload, target)
+}
+
+func readRequestPayload(body io.Reader, maxSize int64) ([]byte, error) {
+	if body == nil {
+		return nil, nil
+	}
+
+	limited := io.LimitReader(body, maxSize+1)
+	payload, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(payload)) > maxSize {
+		return nil, errors.New("request payload is too large")
+	}
+
+	return payload, nil
+}
+
+func decodeStrictJSONPayload(payload []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return errors.New("invalid json payload")
+	}
+
+	return nil
 }

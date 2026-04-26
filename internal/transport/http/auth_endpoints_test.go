@@ -652,6 +652,10 @@ type authEndpointsFixture struct {
 }
 
 func newAuthEndpointsFixture(t *testing.T) authEndpointsFixture {
+	return newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{})
+}
+
+func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transporthttp.RouterOptions) authEndpointsFixture {
 	t.Helper()
 
 	clock := &mutableClock{now: time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)}
@@ -684,9 +688,12 @@ func newAuthEndpointsFixture(t *testing.T) authEndpointsFixture {
 
 	accessAuthService := appidentity.NewAccessAuthService(tokenService, userRepo, sessionRepo)
 	authMiddleware := transporthttp.NewAuthMiddleware(accessAuthService)
+	if routerOptions.AuthMiddleware == nil {
+		routerOptions.AuthMiddleware = authMiddleware
+	}
 
 	handler := transporthttp.NewAuthHandler(authFlowService)
-	router := transporthttp.NewRouter(handler, authMiddleware)
+	router := transporthttp.NewRouterWithOptions(handler, routerOptions)
 
 	return authEndpointsFixture{
 		router:       router,
