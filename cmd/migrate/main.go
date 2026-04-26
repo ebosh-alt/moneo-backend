@@ -1,13 +1,18 @@
 package main
 
 import (
-	"log"
+	"context"
+	"fmt"
+	"os"
 
-	"moneo/backend/internal/bootstrap"
+	"moneo/internal/bootstrap"
 )
 
 func main() {
-	if _, err := bootstrap.NewMigrator(bootstrap.Config{}); err != nil {
-		log.Fatal(err)
+	ctx := context.Background()
+	migrator := bootstrap.NewMigrator()
+	if err := migrator.Run(ctx, os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }

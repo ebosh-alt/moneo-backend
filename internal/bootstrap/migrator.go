@@ -1,13 +1,19 @@
 package bootstrap
 
+import (
+	"context"
+
+	opsmigrate "moneo/internal/ops/migrate"
+)
+
 type Migrator struct {
-	Config Config
+	runner *opsmigrate.Runner
 }
 
-func NewMigrator(cfg Config) (*Migrator, error) {
-	if cfg.ServiceName == "" {
-		cfg.ServiceName = "moneo-migrator"
-	}
+func NewMigrator() *Migrator {
+	return &Migrator{runner: opsmigrate.NewRunner()}
+}
 
-	return &Migrator{Config: cfg}, nil
+func (m *Migrator) Run(ctx context.Context, args []string) error {
+	return m.runner.Run(ctx, args)
 }
