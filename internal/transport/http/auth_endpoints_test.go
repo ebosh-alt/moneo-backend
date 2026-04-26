@@ -384,6 +384,119 @@ func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(
 	}
 }
 
+func TestAuthMeRejectsMissingToken(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var response errorResponse
+	decodeJSONResponse(t, rec, &response)
+	if response.Error != "invalid_access_token" {
+		t.Fatalf("expected invalid_access_token, got %q", response.Error)
+	}
+}
+
+func TestAuthMeRejectsExpiredToken(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	fixture.clock.Advance(16 * time.Minute)
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+		"Authorization": "Bearer " + registerResponse.AccessToken,
+	})
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var response errorResponse
+	decodeJSONResponse(t, rec, &response)
+	if response.Error != "invalid_access_token" {
+		t.Fatalf("expected invalid_access_token, got %q", response.Error)
+	}
+}
+
+func TestAuthMeRejectsRevokedSession(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	now := fixture.clock.Now()
+	fixture.sessionRepo.sessions[0].RevokedAt = &now
+
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+		"Authorization": "Bearer " + registerResponse.AccessToken,
+	})
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var response errorResponse
+	decodeJSONResponse(t, rec, &response)
+	if response.Error != "invalid_access_token" {
+		t.Fatalf("expected invalid_access_token, got %q", response.Error)
+	}
+}
+
+func TestAuthMeReturnsCurrentUserWithoutSensitiveFields(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+		"email":            "user@example.com",
+		"password":         "StrongPassw0rd!",
+		"password_confirm": "StrongPassw0rd!",
+	}, nil)
+
+	var registerResponse authResponse
+	decodeJSONResponse(t, register, &registerResponse)
+
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+		"Authorization": "Bearer " + registerResponse.AccessToken,
+	})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var payload map[string]any
+	decodeJSONResponse(t, rec, &payload)
+
+	if payload["id"] == "" {
+		t.Fatal("id must not be empty")
+	}
+	if payload["email"] != "user@example.com" {
+		t.Fatalf("expected email user@example.com, got %v", payload["email"])
+	}
+	if _, has := payload["password_hash"]; has {
+		t.Fatal("response must not include password_hash")
+	}
+	if _, has := payload["refresh_token"]; has {
+		t.Fatal("response must not include refresh_token")
+	}
+	if _, has := payload["password"]; has {
+		t.Fatal("response must not include password")
+	}
+}
+
 type authEndpointsFixture struct {
 	router       http.Handler
 	authService  *appidentity.AuthService
@@ -423,8 +536,11 @@ func newAuthEndpointsFixture(t *testing.T) authEndpointsFixture {
 		clock,
 	)
 
+	accessAuthService := appidentity.NewAccessAuthService(tokenService, userRepo, sessionRepo)
+	authMiddleware := transporthttp.NewAuthMiddleware(accessAuthService)
+
 	handler := transporthttp.NewAuthHandler(authFlowService)
-	router := transporthttp.NewRouter(handler)
+	router := transporthttp.NewRouter(handler, authMiddleware)
 
 	return authEndpointsFixture{
 		router:       router,
@@ -581,6 +697,16 @@ func (r *inMemoryUserRepo) FindByNormalizedEmail(_ context.Context, normalizedEm
 	return user, nil
 }
 
+func (r *inMemoryUserRepo) FindByID(_ context.Context, userID shared.UserID) (domainidentity.User, error) {
+	for _, user := range r.byNormalizedEmail {
+		if user.ID == userID {
+			return user, nil
+		}
+	}
+
+	return domainidentity.User{}, appidentity.ErrUserNotFound
+}
+
 type inMemorySessionRepo struct {
 	sessions []domainidentity.Session
 }
@@ -605,6 +731,16 @@ func (r *inMemorySessionRepo) Create(_ context.Context, session domainidentity.S
 func (r *inMemorySessionRepo) FindByRefreshTokenHash(_ context.Context, refreshTokenHash string) (domainidentity.Session, error) {
 	for _, session := range r.sessions {
 		if session.RefreshTokenHash == refreshTokenHash {
+			return session, nil
+		}
+	}
+
+	return domainidentity.Session{}, appidentity.ErrSessionNotFound
+}
+
+func (r *inMemorySessionRepo) FindByID(_ context.Context, sessionID shared.SessionID) (domainidentity.Session, error) {
+	for _, session := range r.sessions {
+		if session.ID == sessionID {
 			return session, nil
 		}
 	}

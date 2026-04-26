@@ -109,6 +109,58 @@ LIMIT 1
 	}, nil
 }
 
+func (r *AuthUserRepository) FindByID(ctx context.Context, userID shared.UserID) (domainidentity.User, error) {
+	const query = `
+SELECT
+	id::text,
+	email,
+	normalized_email,
+	password_hash,
+	email_verified,
+	created_at,
+	updated_at
+FROM users
+WHERE id = $1
+LIMIT 1
+`
+
+	var (
+		id               string
+		email            string
+		storedNormalized string
+		passwordHash     string
+		emailVerified    bool
+		createdAt        time.Time
+		updatedAt        time.Time
+	)
+
+	if err := r.pool.QueryRow(ctx, query, string(userID)).Scan(
+		&id,
+		&email,
+		&storedNormalized,
+		&passwordHash,
+		&emailVerified,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domainidentity.User{}, appidentity.ErrUserNotFound
+		}
+
+		return domainidentity.User{}, fmt.Errorf("select user by id: %w", err)
+	}
+
+	return domainidentity.User{
+		ID:              shared.UserID(id),
+		Email:           email,
+		NormalizedEmail: storedNormalized,
+		PasswordHash:    passwordHash,
+		EmailVerified:   emailVerified,
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
+	}, nil
+}
+
 type AuthSessionRepository struct {
 	pool *pgxpool.Pool
 }
@@ -189,6 +241,58 @@ LIMIT 1
 		}
 
 		return domainidentity.Session{}, fmt.Errorf("select session by refresh token hash: %w", err)
+	}
+
+	return domainidentity.Session{
+		ID:               shared.SessionID(id),
+		UserID:           shared.UserID(userID),
+		RefreshTokenHash: hash,
+		CreatedAt:        createdAt,
+		LastUsedAt:       lastUsedAt,
+		ExpiresAt:        expiresAt,
+		RevokedAt:        revokedAt,
+	}, nil
+}
+
+func (r *AuthSessionRepository) FindByID(ctx context.Context, sessionID shared.SessionID) (domainidentity.Session, error) {
+	const query = `
+SELECT
+	id::text,
+	user_id::text,
+	refresh_token_hash,
+	created_at,
+	last_used_at,
+	expires_at,
+	revoked_at
+FROM sessions
+WHERE id = $1
+LIMIT 1
+`
+
+	var (
+		id         string
+		userID     string
+		hash       string
+		createdAt  time.Time
+		lastUsedAt *time.Time
+		expiresAt  time.Time
+		revokedAt  *time.Time
+	)
+
+	if err := r.pool.QueryRow(ctx, query, string(sessionID)).Scan(
+		&id,
+		&userID,
+		&hash,
+		&createdAt,
+		&lastUsedAt,
+		&expiresAt,
+		&revokedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domainidentity.Session{}, appidentity.ErrSessionNotFound
+		}
+
+		return domainidentity.Session{}, fmt.Errorf("select session by id: %w", err)
 	}
 
 	return domainidentity.Session{

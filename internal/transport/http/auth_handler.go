@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	appidentity "moneo/internal/app/identity"
 	domainidentity "moneo/internal/domain/identity"
@@ -76,6 +77,13 @@ type loginRequest struct {
 type authResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int64  `json:"expires_in"`
+}
+
+type meResponse struct {
+	ID            string    `json:"id"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type errorResponse struct {
@@ -196,6 +204,22 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 
 	clearRefreshCookie(c)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) Me(c *gin.Context) {
+	user, userOK := UserFromContext(c)
+	_, sessionOK := SessionFromContext(c)
+	if !userOK || !sessionOK {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "invalid_access_token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, meResponse{
+		ID:            string(user.ID),
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		CreatedAt:     user.CreatedAt,
+	})
 }
 
 func (h *AuthHandler) writeAuthError(c *gin.Context, err error) {
