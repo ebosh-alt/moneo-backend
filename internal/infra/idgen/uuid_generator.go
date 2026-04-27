@@ -31,3 +31,7 @@ func (UUIDGenerator) NewAccountID() shared.AccountID {
 func (UUIDGenerator) NewCategoryID() shared.CategoryID {
 	return shared.CategoryID(uuid.NewString())
 }
+
+func (UUIDGenerator) NewSubcategoryID() shared.SubcategoryID {
+	return shared.SubcategoryID(uuid.NewString())
+}

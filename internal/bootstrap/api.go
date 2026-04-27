@@ -125,7 +125,7 @@ func NewAPI(cfg Config) (*API, error) {
 	accountUpdateService := appaccounting.NewUpdateAccountService(accountRepository, systemClock)
 
 	categoryRepository := postgres.NewCategoryRepository(pool)
-	subcategoryRepository := emptySubcategoryRepository{}
+	subcategoryRepository := postgres.NewSubcategoryRepository(pool)
 	categoryCreateService := appcatalog.NewCreateCategoryService(categoryRepository, ids, systemClock)
 	categoryQueryService := appcatalog.NewCategoryQueryService(categoryRepository)
 	categoryListService := appcatalog.NewListCategoriesService(categoryRepository)
