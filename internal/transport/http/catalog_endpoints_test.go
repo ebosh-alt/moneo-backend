@@ -224,6 +224,183 @@ func TestAccountsListAppliesTypeCurrencyAndSortFilters(t *testing.T) {
 	}
 }
 
+func TestAccountsSummaryCalculatesBucketsAndAppliesCurrencyFilter(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	ownerToken := registerAndGetAccessToken(t, router, "catalog-summary-owner@example.com")
+	foreignToken := registerAndGetAccessToken(t, router, "catalog-summary-foreign@example.com")
+
+	ownerID := userIDFromToken(t, fixture, ownerToken)
+	foreignID := userIDFromToken(t, fixture, foreignToken)
+
+	archivedAt := time.Date(2026, 4, 28, 11, 30, 0, 0, time.UTC)
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    ownerID,
+		Name:      "Main card",
+		Type:      domainaccounting.AccountTypeDebitCard,
+		Currency:  shared.CurrencyRUB,
+		Balance:   120_000_00,
+		Initial:   120_000_00,
+		CreatedAt: time.Date(2026, 4, 28, 9, 0, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:               ownerID,
+		Name:                 "Cash wallet",
+		Type:                 domainaccounting.AccountTypeCash,
+		Currency:             shared.CurrencyRUB,
+		Balance:              60_000_00,
+		Initial:              60_000_00,
+		IncludeInNetWorth:    boolPtr(false),
+		IncludeInDailyBudget: boolPtr(true),
+		CreatedAt:            time.Date(2026, 4, 28, 9, 10, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:               ownerID,
+		Name:                 "Savings",
+		Type:                 domainaccounting.AccountTypeSavings,
+		Currency:             shared.CurrencyRUB,
+		Balance:              50_000_00,
+		Initial:              50_000_00,
+		IncludeInNetWorth:    boolPtr(true),
+		IncludeInDailyBudget: boolPtr(false),
+		CreatedAt:            time.Date(2026, 4, 28, 9, 20, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    ownerID,
+		Name:      "Deposit",
+		Type:      domainaccounting.AccountTypeDeposit,
+		Currency:  shared.CurrencyRUB,
+		Balance:   30_000_00,
+		Initial:   30_000_00,
+		CreatedAt: time.Date(2026, 4, 28, 9, 30, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:               ownerID,
+		Name:                 "Credit",
+		Type:                 domainaccounting.AccountTypeCreditCard,
+		Currency:             shared.CurrencyRUB,
+		Balance:              40_000_00,
+		Initial:              40_000_00,
+		IncludeInNetWorth:    boolPtr(true),
+		IncludeInDailyBudget: boolPtr(false),
+		CreatedAt:            time.Date(2026, 4, 28, 9, 40, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:               ownerID,
+		Name:                 "Debt",
+		Type:                 domainaccounting.AccountTypeDebt,
+		Currency:             shared.CurrencyRUB,
+		Balance:              10_000_00,
+		Initial:              10_000_00,
+		IncludeInNetWorth:    boolPtr(false),
+		IncludeInDailyBudget: boolPtr(false),
+		CreatedAt:            time.Date(2026, 4, 28, 9, 50, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:               ownerID,
+		Name:                 "Archived RUB",
+		Type:                 domainaccounting.AccountTypeCash,
+		Currency:             shared.CurrencyRUB,
+		Balance:              999_00,
+		Initial:              999_00,
+		IncludeInNetWorth:    boolPtr(true),
+		IncludeInDailyBudget: boolPtr(true),
+		ArchivedAt:           &archivedAt,
+		CreatedAt:            time.Date(2026, 4, 28, 8, 0, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    ownerID,
+		Name:      "USD card",
+		Type:      domainaccounting.AccountTypeDebitCard,
+		Currency:  shared.CurrencyUSD,
+		Balance:   777_00,
+		Initial:   777_00,
+		CreatedAt: time.Date(2026, 4, 28, 9, 55, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    foreignID,
+		Name:      "Foreign account",
+		Type:      domainaccounting.AccountTypeDebitCard,
+		Currency:  shared.CurrencyRUB,
+		Balance:   888_000_00,
+		Initial:   888_000_00,
+		CreatedAt: time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
+	})
+
+	rec := performJSONRequest(t, router, http.MethodGet, "/api/v1/accounts/summary?currency=RUB", nil, map[string]string{
+		"Authorization": "Bearer " + ownerToken,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Currency                string `json:"currency"`
+		NetWorth                string `json:"netWorth"`
+		CashBalance             string `json:"cashBalance"`
+		AvailableForDailyBudget string `json:"availableForDailyBudget"`
+		CreditLiabilities       string `json:"creditLiabilities"`
+		Accounts                []struct {
+			Name string `json:"name"`
+		} `json:"accounts"`
+	}
+	decodeJSONResponse(t, rec, &payload)
+
+	if payload.Currency != "RUB" {
+		t.Fatalf("expected summary currency RUB, got %q", payload.Currency)
+	}
+	if payload.NetWorth != "190000.00" {
+		t.Fatalf("expected netWorth 190000.00, got %q", payload.NetWorth)
+	}
+	if payload.CashBalance != "260000.00" {
+		t.Fatalf("expected cashBalance 260000.00, got %q", payload.CashBalance)
+	}
+	if payload.AvailableForDailyBudget != "210000.00" {
+		t.Fatalf("expected availableForDailyBudget 210000.00, got %q", payload.AvailableForDailyBudget)
+	}
+	if payload.CreditLiabilities != "50000.00" {
+		t.Fatalf("expected creditLiabilities 50000.00, got %q", payload.CreditLiabilities)
+	}
+	if len(payload.Accounts) != 6 {
+		t.Fatalf("expected 6 active RUB accounts, got %d", len(payload.Accounts))
+	}
+
+	for _, item := range payload.Accounts {
+		if item.Name == "Archived RUB" {
+			t.Fatal("archived account must be excluded from summary")
+		}
+		if item.Name == "USD card" {
+			t.Fatal("different currency account must be excluded from summary")
+		}
+		if item.Name == "Foreign account" {
+			t.Fatal("foreign account must be excluded from summary")
+		}
+	}
+}
+
+func TestAccountsSummaryValidatesCurrency(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-summary-validation@example.com")
+	rec := performJSONRequest(t, router, http.MethodGet, "/api/v1/accounts/summary", nil, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+
+	var payload structuredErrorResponse
+	decodeJSONResponse(t, rec, &payload)
+	if payload.Error.Code != "validation_error" {
+		t.Fatalf("expected validation_error code, got %q", payload.Error.Code)
+	}
+	assertErrorDetailField(t, payload.Error.Details, "currency")
+}
+
 func TestPatchAccountRejectsImmutableFields(t *testing.T) {
 	store := newCatalogTestStore(t)
 	fixture := newCatalogRouterWithAuthFixture(t, store)
@@ -267,6 +444,7 @@ func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) cata
 		accountCreateUseCase{store: store},
 		accountGetUseCase{store: store},
 		accountListUseCase{store: store},
+		accountSummaryUseCase{store: store},
 		accountUpdateUseCase{store: store},
 		categoryGetUseCase{store: store},
 		categoryListUseCase{store: store},
@@ -386,13 +564,16 @@ func (s *catalogTestStore) mustCreateAccount(t *testing.T, userID shared.UserID,
 }
 
 type accountFixtureParams struct {
-	UserID    shared.UserID
-	Name      string
-	Type      domainaccounting.AccountType
-	Currency  shared.Currency
-	Balance   int64
-	Initial   int64
-	CreatedAt time.Time
+	UserID               shared.UserID
+	Name                 string
+	Type                 domainaccounting.AccountType
+	Currency             shared.Currency
+	Balance              int64
+	Initial              int64
+	ArchivedAt           *time.Time
+	IncludeInNetWorth    *bool
+	IncludeInDailyBudget *bool
+	CreatedAt            time.Time
 }
 
 func (s *catalogTestStore) mustCreateAccountWithParams(t *testing.T, params accountFixtureParams) shared.AccountID {
@@ -404,6 +585,14 @@ func (s *catalogTestStore) mustCreateAccountWithParams(t *testing.T, params acco
 	if createdAt.IsZero() {
 		createdAt = time.Date(2026, 4, 28, 12, 0, 0, s.accountSeq, time.UTC)
 	}
+	includeInNetWorth := true
+	if params.IncludeInNetWorth != nil {
+		includeInNetWorth = *params.IncludeInNetWorth
+	}
+	includeInDailyBudget := true
+	if params.IncludeInDailyBudget != nil {
+		includeInDailyBudget = *params.IncludeInDailyBudget
+	}
 
 	account, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
 		ID:                   id,
@@ -412,8 +601,9 @@ func (s *catalogTestStore) mustCreateAccountWithParams(t *testing.T, params acco
 		Type:                 params.Type,
 		Balance:              shared.NewMoney(params.Balance, params.Currency),
 		InitialBalance:       shared.NewMoney(params.Initial, params.Currency),
-		IncludeInNetWorth:    true,
-		IncludeInDailyBudget: true,
+		IncludeInNetWorth:    includeInNetWorth,
+		IncludeInDailyBudget: includeInDailyBudget,
+		ArchivedAt:           params.ArchivedAt,
 		CreatedAt:            createdAt,
 		UpdatedAt:            createdAt,
 	})
@@ -624,6 +814,68 @@ func (u accountUpdateUseCase) Update(_ context.Context, input appaccounting.Upda
 	return updated, nil
 }
 
+type accountSummaryUseCase struct {
+	store *catalogTestStore
+}
+
+func (u accountSummaryUseCase) GetByUserAndCurrency(
+	_ context.Context,
+	input appaccounting.GetAccountsSummaryInput,
+) (appaccounting.AccountSummary, error) {
+	var netWorthBase int64
+	var cashBalance int64
+	var availableForDailyBudget int64
+	var creditLiabilities int64
+	accounts := make([]appaccounting.AccountSummaryAccount, 0, len(u.store.accounts))
+
+	for _, account := range u.store.accounts {
+		if account.UserID() != input.UserID {
+			continue
+		}
+		if account.ArchivedAt() != nil {
+			continue
+		}
+		if account.Balance().Currency() != input.Currency {
+			continue
+		}
+
+		balanceMinor := account.Balance().MinorUnits()
+		if account.IncludeInNetWorth() {
+			netWorthBase += balanceMinor
+		}
+		if account.IncludeInDailyBudget() {
+			availableForDailyBudget += balanceMinor
+		}
+		if account.Type() == domainaccounting.AccountTypeCash ||
+			account.Type() == domainaccounting.AccountTypeDebitCard ||
+			account.Type() == domainaccounting.AccountTypeSavings ||
+			account.Type() == domainaccounting.AccountTypeDeposit {
+			cashBalance += balanceMinor
+		}
+		if account.Type() == domainaccounting.AccountTypeCreditCard || account.Type() == domainaccounting.AccountTypeDebt {
+			creditLiabilities += balanceMinor
+		}
+
+		accounts = append(accounts, appaccounting.AccountSummaryAccount{
+			ID:                   account.ID(),
+			Name:                 account.Name(),
+			Type:                 account.Type(),
+			Balance:              account.Balance(),
+			IncludeInNetWorth:    account.IncludeInNetWorth(),
+			IncludeInDailyBudget: account.IncludeInDailyBudget(),
+		})
+	}
+
+	return appaccounting.AccountSummary{
+		Currency:                input.Currency,
+		NetWorth:                shared.NewMoney(netWorthBase-creditLiabilities, input.Currency),
+		CashBalance:             shared.NewMoney(cashBalance, input.Currency),
+		AvailableForDailyBudget: shared.NewMoney(availableForDailyBudget, input.Currency),
+		CreditLiabilities:       shared.NewMoney(creditLiabilities, input.Currency),
+		Accounts:                accounts,
+	}, nil
+}
+
 type categoryGetUseCase struct {
 	store *catalogTestStore
 }
@@ -690,4 +942,8 @@ func (u subcategoryListUseCase) ListByUserID(_ context.Context, userID shared.Us
 		return string(subcategories[i].ID()) < string(subcategories[j].ID())
 	})
 	return subcategories, nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

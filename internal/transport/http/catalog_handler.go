@@ -29,6 +29,10 @@ type AccountListUseCase interface {
 	ListByUser(ctx context.Context, input appaccounting.ListAccountsInput) ([]domainaccounting.Account, error)
 }
 
+type AccountSummaryUseCase interface {
+	GetByUserAndCurrency(ctx context.Context, input appaccounting.GetAccountsSummaryInput) (appaccounting.AccountSummary, error)
+}
+
 type AccountUpdateUseCase interface {
 	Update(ctx context.Context, input appaccounting.UpdateAccountInput) (domainaccounting.Account, error)
 }
@@ -53,6 +57,7 @@ type CatalogHandler struct {
 	accountsCreate    AccountCreateUseCase
 	accountsGet       AccountGetUseCase
 	accountsList      AccountListUseCase
+	accountsSummary   AccountSummaryUseCase
 	accountsUpdate    AccountUpdateUseCase
 	categoriesGet     CategoryGetUseCase
 	categoriesList    CategoryListUseCase
@@ -64,6 +69,7 @@ func NewCatalogHandler(
 	accountsCreate AccountCreateUseCase,
 	accountsGet AccountGetUseCase,
 	accountsList AccountListUseCase,
+	accountsSummary AccountSummaryUseCase,
 	accountsUpdate AccountUpdateUseCase,
 	categoriesGet CategoryGetUseCase,
 	categoriesList CategoryListUseCase,
@@ -74,6 +80,7 @@ func NewCatalogHandler(
 		accountsCreate:    accountsCreate,
 		accountsGet:       accountsGet,
 		accountsList:      accountsList,
+		accountsSummary:   accountsSummary,
 		accountsUpdate:    accountsUpdate,
 		categoriesGet:     categoriesGet,
 		categoriesList:    categoriesList,
@@ -115,6 +122,25 @@ type accountResponse struct {
 	ArchivedAt           *time.Time `json:"archivedAt"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+type accountSummaryAccountResponse struct {
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Type                 string `json:"type"`
+	Currency             string `json:"currency"`
+	Balance              string `json:"balance"`
+	IncludeInNetWorth    bool   `json:"includeInNetWorth"`
+	IncludeInDailyBudget bool   `json:"includeInDailyBudget"`
+}
+
+type accountSummaryResponse struct {
+	Currency                string                          `json:"currency"`
+	NetWorth                string                          `json:"netWorth"`
+	CashBalance             string                          `json:"cashBalance"`
+	AvailableForDailyBudget string                          `json:"availableForDailyBudget"`
+	CreditLiabilities       string                          `json:"creditLiabilities"`
+	Accounts                []accountSummaryAccountResponse `json:"accounts"`
 }
 
 type categoryResponse struct {
@@ -401,6 +427,53 @@ func (h *CatalogHandler) ListAccounts(c *gin.Context) {
 			Total:  total,
 		},
 	})
+}
+
+func (h *CatalogHandler) GetAccountsSummary(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.accountsSummary == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	rawCurrency := strings.TrimSpace(c.Query("currency"))
+	if rawCurrency == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "currency",
+			Message: "currency is required",
+		})
+		return
+	}
+
+	currency, err := shared.ParseCurrency(rawCurrency)
+	if err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "currency",
+			Message: "currency must be one of: RUB, USD, EUR",
+		})
+		return
+	}
+
+	summary, err := h.accountsSummary.GetByUserAndCurrency(c.Request.Context(), appaccounting.GetAccountsSummaryInput{
+		UserID:   user.ID,
+		Currency: currency,
+	})
+	if err != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	response, mapErr := toAccountSummaryResponse(summary)
+	if mapErr != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *CatalogHandler) GetCategory(c *gin.Context) {
@@ -762,5 +835,51 @@ func toAccountResponse(account domainaccounting.Account) (accountResponse, error
 		ArchivedAt:           account.ArchivedAt(),
 		CreatedAt:            account.CreatedAt(),
 		UpdatedAt:            account.UpdatedAt(),
+	}, nil
+}
+
+func toAccountSummaryResponse(summary appaccounting.AccountSummary) (accountSummaryResponse, error) {
+	netWorth, err := FormatMoneyToREST(summary.NetWorth)
+	if err != nil {
+		return accountSummaryResponse{}, err
+	}
+	cashBalance, err := FormatMoneyToREST(summary.CashBalance)
+	if err != nil {
+		return accountSummaryResponse{}, err
+	}
+	availableForDailyBudget, err := FormatMoneyToREST(summary.AvailableForDailyBudget)
+	if err != nil {
+		return accountSummaryResponse{}, err
+	}
+	creditLiabilities, err := FormatMoneyToREST(summary.CreditLiabilities)
+	if err != nil {
+		return accountSummaryResponse{}, err
+	}
+
+	accounts := make([]accountSummaryAccountResponse, 0, len(summary.Accounts))
+	for _, account := range summary.Accounts {
+		balance, formatErr := FormatMoneyToREST(account.Balance)
+		if formatErr != nil {
+			return accountSummaryResponse{}, formatErr
+		}
+
+		accounts = append(accounts, accountSummaryAccountResponse{
+			ID:                   string(account.ID),
+			Name:                 account.Name,
+			Type:                 string(account.Type),
+			Currency:             account.Balance.Currency().String(),
+			Balance:              balance,
+			IncludeInNetWorth:    account.IncludeInNetWorth,
+			IncludeInDailyBudget: account.IncludeInDailyBudget,
+		})
+	}
+
+	return accountSummaryResponse{
+		Currency:                summary.Currency.String(),
+		NetWorth:                netWorth,
+		CashBalance:             cashBalance,
+		AvailableForDailyBudget: availableForDailyBudget,
+		CreditLiabilities:       creditLiabilities,
+		Accounts:                accounts,
 	}, nil
 }

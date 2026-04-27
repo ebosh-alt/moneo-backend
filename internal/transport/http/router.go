@@ -72,6 +72,7 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 func registerCatalogRoutes(routes gin.IRoutes, handler *CatalogHandler) {
 	routes.POST("/accounts", handler.CreateAccount)
 	routes.GET("/accounts", handler.ListAccounts)
+	routes.GET("/accounts/summary", handler.GetAccountsSummary)
 	routes.GET("/accounts/:accountId", handler.GetAccount)
 	routes.PATCH("/accounts/:accountId", handler.PatchAccount)
 	routes.GET("/categories", handler.ListCategories)
