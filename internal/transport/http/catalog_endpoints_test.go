@@ -22,7 +22,7 @@ func TestCatalogValidationErrorsIncludeFieldLevelDetails(t *testing.T) {
 	router := newCatalogRouterWithAuthFixture(t, store).router
 	accessToken := registerAndGetAccessToken(t, router, "catalog-validation@example.com")
 
-	rec := performJSONRequest(t, router, http.MethodPost, "/accounts", map[string]any{
+	rec := performJSONRequest(t, router, http.MethodPost, "/api/v1/accounts", map[string]any{
 		"name":           " ",
 		"type":           "invalid",
 		"currency":       "BTC",
@@ -57,7 +57,7 @@ func TestCatalogMoneyParsingRejectsNonStringInitialBalance(t *testing.T) {
 	router := newCatalogRouterWithAuthFixture(t, store).router
 	accessToken := registerAndGetAccessToken(t, router, "catalog-money@example.com")
 
-	rec := performJSONRequest(t, router, http.MethodPost, "/accounts", map[string]any{
+	rec := performJSONRequest(t, router, http.MethodPost, "/api/v1/accounts", map[string]any{
 		"name":                 "Main card",
 		"type":                 "debit_card",
 		"currency":             "RUB",
@@ -100,9 +100,9 @@ func TestCatalogOwnershipReturnsNotFoundForForeignResources(t *testing.T) {
 	}
 
 	testCases := []string{
-		"/accounts/" + string(accountID),
-		"/categories/" + string(categoryID),
-		"/subcategories/" + string(subcategoryID),
+		"/api/v1/accounts/" + string(accountID),
+		"/api/v1/categories/" + string(categoryID),
+		"/api/v1/subcategories/" + string(subcategoryID),
 	}
 
 	for _, path := range testCases {
@@ -139,9 +139,9 @@ func TestCatalogListResponsesUseItemsAndPaginationShape(t *testing.T) {
 	store.mustCreateAccount(t, userID, "Savings")
 
 	testCases := []string{
-		"/accounts?limit=2&offset=1",
-		"/categories?limit=2&offset=0",
-		"/subcategories?limit=1&offset=0",
+		"/api/v1/accounts?limit=2&offset=1",
+		"/api/v1/categories?limit=2&offset=0",
+		"/api/v1/subcategories?limit=1&offset=0",
 	}
 
 	for _, path := range testCases {
@@ -171,6 +171,89 @@ func TestCatalogListResponsesUseItemsAndPaginationShape(t *testing.T) {
 	}
 }
 
+func TestAccountsListAppliesTypeCurrencyAndSortFilters(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-filter@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    userID,
+		Name:      "Z card",
+		Type:      domainaccounting.AccountTypeDebitCard,
+		Currency:  shared.CurrencyRUB,
+		Balance:   100_00,
+		Initial:   100_00,
+		CreatedAt: time.Date(2026, 4, 28, 9, 0, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    userID,
+		Name:      "A cash",
+		Type:      domainaccounting.AccountTypeCash,
+		Currency:  shared.CurrencyRUB,
+		Balance:   200_00,
+		Initial:   200_00,
+		CreatedAt: time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
+	})
+	store.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    userID,
+		Name:      "USD savings",
+		Type:      domainaccounting.AccountTypeSavings,
+		Currency:  shared.CurrencyUSD,
+		Balance:   300_00,
+		Initial:   300_00,
+		CreatedAt: time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC),
+	})
+
+	rec := performJSONRequest(t, router, http.MethodGet, "/api/v1/accounts?type=cash&currency=RUB&sort=name:asc", nil, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var payload paginatedEnvelope
+	decodeJSONResponse(t, rec, &payload)
+	if len(payload.Items) != 1 {
+		t.Fatalf("expected 1 filtered account, got %d", len(payload.Items))
+	}
+	if payload.Items[0]["name"] != "A cash" {
+		t.Fatalf("expected filtered account A cash, got %v", payload.Items[0]["name"])
+	}
+}
+
+func TestPatchAccountRejectsImmutableFields(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-patch@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+	accountID := store.mustCreateAccount(t, userID, "Main card")
+
+	rec := performJSONRequest(t, router, http.MethodPatch, "/api/v1/accounts/"+string(accountID), map[string]any{
+		"currency":       "USD",
+		"initialBalance": "100.00",
+		"balance":        "100.00",
+	}, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+
+	var payload structuredErrorResponse
+	decodeJSONResponse(t, rec, &payload)
+	if payload.Error.Code != "validation_error" {
+		t.Fatalf("expected validation_error, got %q", payload.Error.Code)
+	}
+	assertErrorDetailField(t, payload.Error.Details, "currency")
+	assertErrorDetailField(t, payload.Error.Details, "initialBalance")
+	assertErrorDetailField(t, payload.Error.Details, "balance")
+}
+
 type catalogRouterFixture struct {
 	router  http.Handler
 	auth    authEndpointsFixture
@@ -184,6 +267,7 @@ func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) cata
 		accountCreateUseCase{store: store},
 		accountGetUseCase{store: store},
 		accountListUseCase{store: store},
+		accountUpdateUseCase{store: store},
 		categoryGetUseCase{store: store},
 		categoryListUseCase{store: store},
 		subcategoryGetUseCase{store: store},
@@ -290,20 +374,48 @@ func newCatalogTestStore(t *testing.T) *catalogTestStore {
 func (s *catalogTestStore) mustCreateAccount(t *testing.T, userID shared.UserID, name string) shared.AccountID {
 	t.Helper()
 
+	return s.mustCreateAccountWithParams(t, accountFixtureParams{
+		UserID:    userID,
+		Name:      name,
+		Type:      domainaccounting.AccountTypeDebitCard,
+		Currency:  shared.CurrencyRUB,
+		Balance:   100_00,
+		Initial:   100_00,
+		CreatedAt: time.Date(2026, 4, 28, 12, 0, 0, s.accountSeq+1, time.UTC),
+	})
+}
+
+type accountFixtureParams struct {
+	UserID    shared.UserID
+	Name      string
+	Type      domainaccounting.AccountType
+	Currency  shared.Currency
+	Balance   int64
+	Initial   int64
+	CreatedAt time.Time
+}
+
+func (s *catalogTestStore) mustCreateAccountWithParams(t *testing.T, params accountFixtureParams) shared.AccountID {
+	t.Helper()
+
 	s.accountSeq++
 	id := shared.AccountID("acc-" + strconv.Itoa(s.accountSeq))
-	now := time.Date(2026, 4, 28, 12, 0, 0, s.accountSeq, time.UTC)
+	createdAt := params.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Date(2026, 4, 28, 12, 0, 0, s.accountSeq, time.UTC)
+	}
+
 	account, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
 		ID:                   id,
-		UserID:               userID,
-		Name:                 name,
-		Type:                 domainaccounting.AccountTypeDebitCard,
-		Balance:              shared.NewMoney(100_00, shared.CurrencyRUB),
-		InitialBalance:       shared.NewMoney(100_00, shared.CurrencyRUB),
+		UserID:               params.UserID,
+		Name:                 params.Name,
+		Type:                 params.Type,
+		Balance:              shared.NewMoney(params.Balance, params.Currency),
+		InitialBalance:       shared.NewMoney(params.Initial, params.Currency),
 		IncludeInNetWorth:    true,
 		IncludeInDailyBudget: true,
-		CreatedAt:            now,
-		UpdatedAt:            now,
+		CreatedAt:            createdAt,
+		UpdatedAt:            createdAt,
 	})
 	if err != nil {
 		t.Fatalf("build account fixture: %v", err)
@@ -411,13 +523,105 @@ func (u accountListUseCase) ListByUser(_ context.Context, input appaccounting.Li
 		if !input.IncludeArchived && account.ArchivedAt() != nil {
 			continue
 		}
+		if input.Type != nil && account.Type() != *input.Type {
+			continue
+		}
+		if input.Currency != nil && account.Balance().Currency() != *input.Currency {
+			continue
+		}
 		accounts = append(accounts, account)
 	}
 
+	sortMode := input.Sort
+	if sortMode == "" {
+		sortMode = appaccounting.AccountsSortCreatedAtDesc
+	}
+
 	sort.Slice(accounts, func(i, j int) bool {
-		return string(accounts[i].ID()) < string(accounts[j].ID())
+		left := accounts[i]
+		right := accounts[j]
+
+		switch sortMode {
+		case appaccounting.AccountsSortNameAsc:
+			leftName := strings.ToLower(left.Name())
+			rightName := strings.ToLower(right.Name())
+			if leftName != rightName {
+				return leftName < rightName
+			}
+		case appaccounting.AccountsSortBalanceDesc:
+			if left.Balance().MinorUnits() != right.Balance().MinorUnits() {
+				return left.Balance().MinorUnits() > right.Balance().MinorUnits()
+			}
+		default:
+			if !left.CreatedAt().Equal(right.CreatedAt()) {
+				return left.CreatedAt().After(right.CreatedAt())
+			}
+		}
+
+		return string(left.ID()) < string(right.ID())
 	})
 	return accounts, nil
+}
+
+type accountUpdateUseCase struct {
+	store *catalogTestStore
+}
+
+func (u accountUpdateUseCase) Update(_ context.Context, input appaccounting.UpdateAccountInput) (domainaccounting.Account, error) {
+	account, ok := u.store.accounts[input.AccountID]
+	if !ok || account.UserID() != input.UserID {
+		return domainaccounting.Account{}, appaccounting.ErrAccountNotFound
+	}
+
+	name := account.Name()
+	if input.Name != nil {
+		name = *input.Name
+	}
+	accountType := account.Type()
+	if input.Type != nil {
+		accountType = *input.Type
+	}
+	includeInNetWorth := account.IncludeInNetWorth()
+	if input.IncludeInNetWorth != nil {
+		includeInNetWorth = *input.IncludeInNetWorth
+	}
+	includeInDailyBudget := account.IncludeInDailyBudget()
+	if input.IncludeInDailyBudget != nil {
+		includeInDailyBudget = *input.IncludeInDailyBudget
+	}
+
+	for id, existing := range u.store.accounts {
+		if id == input.AccountID {
+			continue
+		}
+		if existing.UserID() != input.UserID {
+			continue
+		}
+		if strings.EqualFold(existing.Name(), name) && existing.ArchivedAt() == nil {
+			return domainaccounting.Account{}, appaccounting.ErrAccountNameAlreadyExists
+		}
+	}
+
+	updatedAt := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	updated, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
+		ID:                   account.ID(),
+		UserID:               account.UserID(),
+		Name:                 name,
+		Type:                 accountType,
+		Balance:              account.Balance(),
+		InitialBalance:       account.InitialBalance(),
+		IncludeInNetWorth:    includeInNetWorth,
+		IncludeInDailyBudget: includeInDailyBudget,
+		ArchivedAt:           account.ArchivedAt(),
+		CreatedAt:            account.CreatedAt(),
+		UpdatedAt:            updatedAt,
+	})
+	if err != nil {
+		return domainaccounting.Account{}, err
+	}
+
+	u.store.accounts[input.AccountID] = updated
+	return updated, nil
 }
 
 type categoryGetUseCase struct {

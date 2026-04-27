@@ -46,14 +46,11 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		protectedAuth.POST("/send-verification-email", authHandler.SendVerificationEmail)
 
 		if options.CatalogHandler != nil {
-			protectedCatalog := router.Group("/", options.AuthMiddleware)
-			protectedCatalog.POST("/accounts", options.CatalogHandler.CreateAccount)
-			protectedCatalog.GET("/accounts", options.CatalogHandler.ListAccounts)
-			protectedCatalog.GET("/accounts/:accountId", options.CatalogHandler.GetAccount)
-			protectedCatalog.GET("/categories", options.CatalogHandler.ListCategories)
-			protectedCatalog.GET("/categories/:categoryId", options.CatalogHandler.GetCategory)
-			protectedCatalog.GET("/subcategories", options.CatalogHandler.ListSubcategories)
-			protectedCatalog.GET("/subcategories/:subcategoryId", options.CatalogHandler.GetSubcategory)
+			apiV1 := router.Group("/api/v1", options.AuthMiddleware)
+			registerCatalogRoutes(apiV1, options.CatalogHandler)
+
+			legacy := router.Group("/", options.AuthMiddleware)
+			registerCatalogRoutes(legacy, options.CatalogHandler)
 		}
 	} else {
 		router.GET("/auth/me", authHandler.Me)
@@ -62,15 +59,23 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		router.POST("/auth/send-verification-email", authHandler.SendVerificationEmail)
 
 		if options.CatalogHandler != nil {
-			router.POST("/accounts", options.CatalogHandler.CreateAccount)
-			router.GET("/accounts", options.CatalogHandler.ListAccounts)
-			router.GET("/accounts/:accountId", options.CatalogHandler.GetAccount)
-			router.GET("/categories", options.CatalogHandler.ListCategories)
-			router.GET("/categories/:categoryId", options.CatalogHandler.GetCategory)
-			router.GET("/subcategories", options.CatalogHandler.ListSubcategories)
-			router.GET("/subcategories/:subcategoryId", options.CatalogHandler.GetSubcategory)
+			apiV1 := router.Group("/api/v1")
+			registerCatalogRoutes(apiV1, options.CatalogHandler)
+
+			registerCatalogRoutes(router, options.CatalogHandler)
 		}
 	}
 
 	return router
+}
+
+func registerCatalogRoutes(routes gin.IRoutes, handler *CatalogHandler) {
+	routes.POST("/accounts", handler.CreateAccount)
+	routes.GET("/accounts", handler.ListAccounts)
+	routes.GET("/accounts/:accountId", handler.GetAccount)
+	routes.PATCH("/accounts/:accountId", handler.PatchAccount)
+	routes.GET("/categories", handler.ListCategories)
+	routes.GET("/categories/:categoryId", handler.GetCategory)
+	routes.GET("/subcategories", handler.ListSubcategories)
+	routes.GET("/subcategories/:subcategoryId", handler.GetSubcategory)
 }

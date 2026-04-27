@@ -169,6 +169,44 @@ WHERE id = $1
 	return nil
 }
 
+func (r *AccountRepository) UpdateByID(ctx context.Context, account domainaccounting.Account) error {
+	const query = `
+UPDATE accounts
+SET name = $3,
+    type = $4,
+    include_in_net_worth = $5,
+    include_in_daily_budget = $6,
+    updated_at = $7
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(
+		ctx,
+		query,
+		string(account.ID()),
+		string(account.UserID()),
+		account.Name(),
+		string(account.Type()),
+		account.IncludeInNetWorth(),
+		account.IncludeInDailyBudget(),
+		account.UpdatedAt(),
+	)
+	if err != nil {
+		if isUniqueViolation(err, "ux_accounts_user_name_active") {
+			return appaccounting.ErrDuplicateActiveAccountName
+		}
+
+		return fmt.Errorf("update account by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appaccounting.ErrAccountNotFound
+	}
+
+	return nil
+}
+
 type accountScanner interface {
 	Scan(dest ...any) error
 }

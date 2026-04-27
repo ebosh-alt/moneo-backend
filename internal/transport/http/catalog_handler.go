@@ -29,6 +29,10 @@ type AccountListUseCase interface {
 	ListByUser(ctx context.Context, input appaccounting.ListAccountsInput) ([]domainaccounting.Account, error)
 }
 
+type AccountUpdateUseCase interface {
+	Update(ctx context.Context, input appaccounting.UpdateAccountInput) (domainaccounting.Account, error)
+}
+
 type CategoryGetUseCase interface {
 	GetByID(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID) (domaincatalog.Category, error)
 }
@@ -49,6 +53,7 @@ type CatalogHandler struct {
 	accountsCreate    AccountCreateUseCase
 	accountsGet       AccountGetUseCase
 	accountsList      AccountListUseCase
+	accountsUpdate    AccountUpdateUseCase
 	categoriesGet     CategoryGetUseCase
 	categoriesList    CategoryListUseCase
 	subcategoriesGet  SubcategoryGetUseCase
@@ -59,6 +64,7 @@ func NewCatalogHandler(
 	accountsCreate AccountCreateUseCase,
 	accountsGet AccountGetUseCase,
 	accountsList AccountListUseCase,
+	accountsUpdate AccountUpdateUseCase,
 	categoriesGet CategoryGetUseCase,
 	categoriesList CategoryListUseCase,
 	subcategoriesGet SubcategoryGetUseCase,
@@ -68,6 +74,7 @@ func NewCatalogHandler(
 		accountsCreate:    accountsCreate,
 		accountsGet:       accountsGet,
 		accountsList:      accountsList,
+		accountsUpdate:    accountsUpdate,
 		categoriesGet:     categoriesGet,
 		categoriesList:    categoriesList,
 		subcategoriesGet:  subcategoriesGet,
@@ -82,6 +89,17 @@ type createAccountRequest struct {
 	InitialBalance       *DecimalString `json:"initialBalance"`
 	IncludeInNetWorth    *bool          `json:"includeInNetWorth"`
 	IncludeInDailyBudget *bool          `json:"includeInDailyBudget"`
+}
+
+type patchAccountRequest struct {
+	Name                 *string `json:"name"`
+	Type                 *string `json:"type"`
+	IncludeInNetWorth    *bool   `json:"includeInNetWorth"`
+	IncludeInDailyBudget *bool   `json:"includeInDailyBudget"`
+
+	Currency       *string        `json:"currency"`
+	InitialBalance *DecimalString `json:"initialBalance"`
+	Balance        *DecimalString `json:"balance"`
 }
 
 type accountResponse struct {
@@ -220,6 +238,66 @@ func (h *CatalogHandler) GetAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *CatalogHandler) PatchAccount(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.accountsUpdate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	accountID := strings.TrimSpace(c.Param("accountId"))
+	if accountID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "accountId",
+			Message: "accountId is required",
+		})
+		return
+	}
+
+	var request patchAccountRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "body",
+			Message: "request body is invalid",
+		})
+		return
+	}
+
+	input, details := validatePatchAccountRequest(user.ID, shared.AccountID(accountID), request)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	account, err := h.accountsUpdate.Update(c.Request.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appaccounting.ErrAccountNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Conflict", catalogFieldError{
+				Field:   "name",
+				Message: "account with this name already exists",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	response, mapErr := toAccountResponse(account)
+	if mapErr != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *CatalogHandler) ListAccounts(c *gin.Context) {
 	user, ok := UserFromContext(c)
 	if !ok {
@@ -250,9 +328,54 @@ func (h *CatalogHandler) ListAccounts(c *gin.Context) {
 		includeArchived = parsed
 	}
 
+	var accountType *domainaccounting.AccountType
+	if rawType := strings.TrimSpace(c.Query("type")); rawType != "" {
+		parsedType, err := domainaccounting.ParseAccountType(rawType)
+		if err != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "type",
+				Message: "type must be one of: cash, debit_card, savings, brokerage, credit_card, deposit, debt, other",
+			})
+			return
+		}
+		accountType = &parsedType
+	}
+
+	var currency *shared.Currency
+	if rawCurrency := strings.TrimSpace(c.Query("currency")); rawCurrency != "" {
+		parsedCurrency, err := shared.ParseCurrency(rawCurrency)
+		if err != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "currency",
+				Message: "currency must be one of: RUB, USD, EUR",
+			})
+			return
+		}
+		currency = &parsedCurrency
+	}
+
+	sortMode := appaccounting.AccountsSortCreatedAtDesc
+	if rawSort := strings.TrimSpace(c.Query("sort")); rawSort != "" {
+		switch appaccounting.AccountsSort(rawSort) {
+		case appaccounting.AccountsSortCreatedAtDesc,
+			appaccounting.AccountsSortNameAsc,
+			appaccounting.AccountsSortBalanceDesc:
+			sortMode = appaccounting.AccountsSort(rawSort)
+		default:
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "sort",
+				Message: "sort must be one of: createdAt:desc, name:asc, balance:desc",
+			})
+			return
+		}
+	}
+
 	accounts, err := h.accountsList.ListByUser(c.Request.Context(), appaccounting.ListAccountsInput{
 		UserID:          user.ID,
 		IncludeArchived: includeArchived,
+		Type:            accountType,
+		Currency:        currency,
+		Sort:            sortMode,
 	})
 	if err != nil {
 		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
@@ -451,10 +574,16 @@ func (h *CatalogHandler) ListSubcategories(c *gin.Context) {
 func validateCreateAccountRequest(userID shared.UserID, request createAccountRequest) (appaccounting.CreateAccountInput, []catalogFieldError) {
 	details := make([]catalogFieldError, 0, 6)
 
-	if strings.TrimSpace(request.Name) == "" {
+	trimmedName := strings.TrimSpace(request.Name)
+	if trimmedName == "" {
 		details = append(details, catalogFieldError{
 			Field:   "name",
 			Message: "name is required",
+		})
+	} else if len([]rune(trimmedName)) > 100 {
+		details = append(details, catalogFieldError{
+			Field:   "name",
+			Message: "name must be between 1 and 100 characters",
 		})
 	}
 
@@ -529,11 +658,84 @@ func validateCreateAccountRequest(userID shared.UserID, request createAccountReq
 
 	return appaccounting.CreateAccountInput{
 		UserID:               userID,
-		Name:                 strings.TrimSpace(request.Name),
+		Name:                 trimmedName,
 		Type:                 accountType,
 		InitialBalance:       initialBalance,
 		IncludeInNetWorth:    *request.IncludeInNetWorth,
 		IncludeInDailyBudget: *request.IncludeInDailyBudget,
+	}, nil
+}
+
+func validatePatchAccountRequest(
+	userID shared.UserID,
+	accountID shared.AccountID,
+	request patchAccountRequest,
+) (appaccounting.UpdateAccountInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 5)
+
+	if request.Currency != nil {
+		details = append(details, catalogFieldError{
+			Field:   "currency",
+			Message: "currency is immutable and cannot be changed",
+		})
+	}
+	if request.InitialBalance != nil {
+		details = append(details, catalogFieldError{
+			Field:   "initialBalance",
+			Message: "initialBalance is immutable and cannot be changed",
+		})
+	}
+	if request.Balance != nil {
+		details = append(details, catalogFieldError{
+			Field:   "balance",
+			Message: "balance is immutable and cannot be changed directly",
+		})
+	}
+
+	if request.Name == nil && request.Type == nil && request.IncludeInNetWorth == nil && request.IncludeInDailyBudget == nil {
+		details = append(details, catalogFieldError{
+			Field:   "body",
+			Message: "at least one mutable field is required",
+		})
+	}
+
+	var name *string
+	if request.Name != nil {
+		trimmed := strings.TrimSpace(*request.Name)
+		if trimmed == "" || len([]rune(trimmed)) > 100 {
+			details = append(details, catalogFieldError{
+				Field:   "name",
+				Message: "name must be between 1 and 100 characters",
+			})
+		} else {
+			name = &trimmed
+		}
+	}
+
+	var accountType *domainaccounting.AccountType
+	if request.Type != nil {
+		parsedType, err := domainaccounting.ParseAccountType(strings.TrimSpace(*request.Type))
+		if err != nil {
+			details = append(details, catalogFieldError{
+				Field:   "type",
+				Message: "type must be one of: cash, debit_card, savings, brokerage, credit_card, deposit, debt, other",
+			})
+		} else {
+			accountType = &parsedType
+		}
+	}
+
+	if len(details) > 0 {
+		return appaccounting.UpdateAccountInput{}, details
+	}
+
+	return appaccounting.UpdateAccountInput{
+		UserID:               userID,
+		AccountID:            accountID,
+		Name:                 name,
+		Type:                 accountType,
+		IncludeInNetWorth:    request.IncludeInNetWorth,
+		IncludeInDailyBudget: request.IncludeInDailyBudget,
 	}, nil
 }
 
