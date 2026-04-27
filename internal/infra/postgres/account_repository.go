@@ -169,6 +169,27 @@ WHERE id = $1
 	return nil
 }
 
+func (r *AccountRepository) RestoreByID(ctx context.Context, userID shared.UserID, accountID shared.AccountID, updatedAt time.Time) error {
+	const query = `
+UPDATE accounts
+SET archived_at = NULL,
+    updated_at = $3
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(accountID), string(userID), updatedAt)
+	if err != nil {
+		return fmt.Errorf("restore account by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appaccounting.ErrAccountNotFound
+	}
+
+	return nil
+}
+
 func (r *AccountRepository) UpdateByID(ctx context.Context, account domainaccounting.Account) error {
 	const query = `
 UPDATE accounts

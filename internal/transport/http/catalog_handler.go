@@ -33,6 +33,14 @@ type AccountSummaryUseCase interface {
 	GetByUserAndCurrency(ctx context.Context, input appaccounting.GetAccountsSummaryInput) (appaccounting.AccountSummary, error)
 }
 
+type AccountArchiveUseCase interface {
+	Archive(ctx context.Context, userID shared.UserID, accountID shared.AccountID) (domainaccounting.Account, error)
+}
+
+type AccountRestoreUseCase interface {
+	Restore(ctx context.Context, userID shared.UserID, accountID shared.AccountID) (domainaccounting.Account, error)
+}
+
 type AccountUpdateUseCase interface {
 	Update(ctx context.Context, input appaccounting.UpdateAccountInput) (domainaccounting.Account, error)
 }
@@ -58,6 +66,8 @@ type CatalogHandler struct {
 	accountsGet       AccountGetUseCase
 	accountsList      AccountListUseCase
 	accountsSummary   AccountSummaryUseCase
+	accountsArchive   AccountArchiveUseCase
+	accountsRestore   AccountRestoreUseCase
 	accountsUpdate    AccountUpdateUseCase
 	categoriesGet     CategoryGetUseCase
 	categoriesList    CategoryListUseCase
@@ -70,6 +80,8 @@ func NewCatalogHandler(
 	accountsGet AccountGetUseCase,
 	accountsList AccountListUseCase,
 	accountsSummary AccountSummaryUseCase,
+	accountsArchive AccountArchiveUseCase,
+	accountsRestore AccountRestoreUseCase,
 	accountsUpdate AccountUpdateUseCase,
 	categoriesGet CategoryGetUseCase,
 	categoriesList CategoryListUseCase,
@@ -81,6 +93,8 @@ func NewCatalogHandler(
 		accountsGet:       accountsGet,
 		accountsList:      accountsList,
 		accountsSummary:   accountsSummary,
+		accountsArchive:   accountsArchive,
+		accountsRestore:   accountsRestore,
 		accountsUpdate:    accountsUpdate,
 		categoriesGet:     categoriesGet,
 		categoriesList:    categoriesList,
@@ -312,6 +326,86 @@ func (h *CatalogHandler) PatchAccount(c *gin.Context) {
 		default:
 			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		}
+		return
+	}
+
+	response, mapErr := toAccountResponse(account)
+	if mapErr != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *CatalogHandler) ArchiveAccount(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.accountsArchive == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	accountID := strings.TrimSpace(c.Param("accountId"))
+	if accountID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "accountId",
+			Message: "accountId is required",
+		})
+		return
+	}
+
+	account, err := h.accountsArchive.Archive(c.Request.Context(), user.ID, shared.AccountID(accountID))
+	if err != nil {
+		if errors.Is(err, appaccounting.ErrAccountNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	response, mapErr := toAccountResponse(account)
+	if mapErr != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *CatalogHandler) RestoreAccount(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.accountsRestore == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	accountID := strings.TrimSpace(c.Param("accountId"))
+	if accountID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "accountId",
+			Message: "accountId is required",
+		})
+		return
+	}
+
+	account, err := h.accountsRestore.Restore(c.Request.Context(), user.ID, shared.AccountID(accountID))
+	if err != nil {
+		if errors.Is(err, appaccounting.ErrAccountNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		return
 	}
 

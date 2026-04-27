@@ -120,6 +120,8 @@ func NewAPI(cfg Config) (*API, error) {
 	accountGetService := appaccounting.NewGetAccountService(accountRepository)
 	accountListService := appaccounting.NewListAccountsService(accountRepository)
 	accountSummaryService := appaccounting.NewGetAccountsSummaryService(accountRepository)
+	accountArchiveService := appaccounting.NewArchiveAccountService(accountRepository, systemClock)
+	accountRestoreService := appaccounting.NewRestoreAccountService(accountRepository, systemClock)
 	accountUpdateService := appaccounting.NewUpdateAccountService(accountRepository, systemClock)
 
 	categoryQueryService := appcatalog.NewCategoryQueryService(emptyCategoryRepository{})
@@ -129,6 +131,8 @@ func NewAPI(cfg Config) (*API, error) {
 		accountGetService,
 		accountListService,
 		accountSummaryService,
+		accountArchiveService,
+		accountRestoreService,
 		accountUpdateService,
 		categoryQueryService,
 		categoryQueryService,

@@ -133,6 +133,41 @@ func TestAccountRepositoryListByUserIDSupportsArchiveFiltering(t *testing.T) {
 	}
 }
 
+func TestAccountRepositoryRestoreByIDClearsArchivedAt(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	repo := NewAccountRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "restore@example.com")
+
+	account := newAccountFixture(t, userID, "Archived account", domainaccounting.AccountTypeCash, 10_00, nil)
+	if err := repo.Create(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 14, 0, 0, 0, time.UTC)
+	if err := repo.ArchiveByID(ctx, userID, account.ID(), archivedAt); err != nil {
+		t.Fatalf("archive account: %v", err)
+	}
+
+	restoreAt := time.Date(2026, 4, 28, 15, 0, 0, 0, time.UTC)
+	if err := repo.RestoreByID(ctx, userID, account.ID(), restoreAt); err != nil {
+		t.Fatalf("restore account: %v", err)
+	}
+
+	found, err := repo.FindByID(ctx, userID, account.ID())
+	if err != nil {
+		t.Fatalf("find restored account: %v", err)
+	}
+	if found.ArchivedAt() != nil {
+		t.Fatalf("expected archivedAt nil after restore, got %v", found.ArchivedAt())
+	}
+	if !found.UpdatedAt().Equal(restoreAt) {
+		t.Fatalf("expected updatedAt %s, got %s", restoreAt, found.UpdatedAt())
+	}
+}
+
 func openPostgresForAccountRepoTests(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 

@@ -401,6 +401,106 @@ func TestAccountsSummaryValidatesCurrency(t *testing.T) {
 	assertErrorDetailField(t, payload.Error.Details, "currency")
 }
 
+func TestArchiveAndRestoreAccountFlowIsIdempotent(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-archive@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+	accountID := store.mustCreateAccount(t, userID, "Main card")
+
+	archiveRec := performJSONRequest(t, router, http.MethodPost, "/api/v1/accounts/"+string(accountID)+"/archive", nil, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if archiveRec.Code != http.StatusOK {
+		t.Fatalf("expected archive status 200, got %d, body=%s", archiveRec.Code, archiveRec.Body.String())
+	}
+
+	var archivedPayload struct {
+		IsArchived bool    `json:"isArchived"`
+		ArchivedAt *string `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, archiveRec, &archivedPayload)
+	if !archivedPayload.IsArchived {
+		t.Fatal("expected archived account")
+	}
+	if archivedPayload.ArchivedAt == nil || strings.TrimSpace(*archivedPayload.ArchivedAt) == "" {
+		t.Fatal("expected archivedAt timestamp in archive response")
+	}
+
+	archiveAgainRec := performJSONRequest(t, router, http.MethodPost, "/api/v1/accounts/"+string(accountID)+"/archive", nil, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if archiveAgainRec.Code != http.StatusOK {
+		t.Fatalf("expected second archive status 200, got %d", archiveAgainRec.Code)
+	}
+
+	var archivedAgainPayload struct {
+		IsArchived bool    `json:"isArchived"`
+		ArchivedAt *string `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, archiveAgainRec, &archivedAgainPayload)
+	if !archivedAgainPayload.IsArchived {
+		t.Fatal("expected archived account on second archive")
+	}
+	if archivedAgainPayload.ArchivedAt == nil || archivedPayload.ArchivedAt == nil {
+		t.Fatal("expected archivedAt in both archive responses")
+	}
+	if *archivedAgainPayload.ArchivedAt != *archivedPayload.ArchivedAt {
+		t.Fatalf("expected idempotent archive timestamp %q, got %q", *archivedPayload.ArchivedAt, *archivedAgainPayload.ArchivedAt)
+	}
+
+	restoreRec := performJSONRequest(t, router, http.MethodPost, "/api/v1/accounts/"+string(accountID)+"/restore", nil, map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	})
+	if restoreRec.Code != http.StatusOK {
+		t.Fatalf("expected restore status 200, got %d, body=%s", restoreRec.Code, restoreRec.Body.String())
+	}
+
+	var restoredPayload struct {
+		IsArchived bool `json:"isArchived"`
+		ArchivedAt any  `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, restoreRec, &restoredPayload)
+	if restoredPayload.IsArchived {
+		t.Fatal("expected restored account to be active")
+	}
+	if restoredPayload.ArchivedAt != nil {
+		t.Fatalf("expected archivedAt to be null after restore, got %v", restoredPayload.ArchivedAt)
+	}
+}
+
+func TestArchiveRestoreAccountOwnershipIsolation(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	ownerToken := registerAndGetAccessToken(t, router, "catalog-archive-owner@example.com")
+	foreignToken := registerAndGetAccessToken(t, router, "catalog-archive-foreign@example.com")
+	ownerID := userIDFromToken(t, fixture, ownerToken)
+	accountID := store.mustCreateAccount(t, ownerID, "Owner account")
+
+	paths := []string{
+		"/api/v1/accounts/" + string(accountID) + "/archive",
+		"/api/v1/accounts/" + string(accountID) + "/restore",
+	}
+
+	for _, path := range paths {
+		rec := performJSONRequest(t, router, http.MethodPost, path, nil, map[string]string{
+			"Authorization": "Bearer " + foreignToken,
+		})
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404 for %s, got %d", path, rec.Code)
+		}
+		var payload structuredErrorResponse
+		decodeJSONResponse(t, rec, &payload)
+		if payload.Error.Code != "not_found" {
+			t.Fatalf("expected not_found code for %s, got %q", path, payload.Error.Code)
+		}
+	}
+}
+
 func TestPatchAccountRejectsImmutableFields(t *testing.T) {
 	store := newCatalogTestStore(t)
 	fixture := newCatalogRouterWithAuthFixture(t, store)
@@ -445,6 +545,8 @@ func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) cata
 		accountGetUseCase{store: store},
 		accountListUseCase{store: store},
 		accountSummaryUseCase{store: store},
+		accountArchiveUseCase{store: store},
+		accountRestoreUseCase{store: store},
 		accountUpdateUseCase{store: store},
 		categoryGetUseCase{store: store},
 		categoryListUseCase{store: store},
@@ -874,6 +976,84 @@ func (u accountSummaryUseCase) GetByUserAndCurrency(
 		CreditLiabilities:       shared.NewMoney(creditLiabilities, input.Currency),
 		Accounts:                accounts,
 	}, nil
+}
+
+type accountArchiveUseCase struct {
+	store *catalogTestStore
+}
+
+func (u accountArchiveUseCase) Archive(
+	_ context.Context,
+	userID shared.UserID,
+	accountID shared.AccountID,
+) (domainaccounting.Account, error) {
+	account, ok := u.store.accounts[accountID]
+	if !ok || account.UserID() != userID {
+		return domainaccounting.Account{}, appaccounting.ErrAccountNotFound
+	}
+	if account.ArchivedAt() != nil {
+		return account, nil
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 14, 0, 0, 0, time.UTC)
+	updated, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
+		ID:                   account.ID(),
+		UserID:               account.UserID(),
+		Name:                 account.Name(),
+		Type:                 account.Type(),
+		Balance:              account.Balance(),
+		InitialBalance:       account.InitialBalance(),
+		IncludeInNetWorth:    account.IncludeInNetWorth(),
+		IncludeInDailyBudget: account.IncludeInDailyBudget(),
+		ArchivedAt:           &archivedAt,
+		CreatedAt:            account.CreatedAt(),
+		UpdatedAt:            archivedAt,
+	})
+	if err != nil {
+		return domainaccounting.Account{}, err
+	}
+
+	u.store.accounts[accountID] = updated
+	return updated, nil
+}
+
+type accountRestoreUseCase struct {
+	store *catalogTestStore
+}
+
+func (u accountRestoreUseCase) Restore(
+	_ context.Context,
+	userID shared.UserID,
+	accountID shared.AccountID,
+) (domainaccounting.Account, error) {
+	account, ok := u.store.accounts[accountID]
+	if !ok || account.UserID() != userID {
+		return domainaccounting.Account{}, appaccounting.ErrAccountNotFound
+	}
+	if account.ArchivedAt() == nil {
+		return account, nil
+	}
+
+	restoredAt := time.Date(2026, 4, 28, 15, 0, 0, 0, time.UTC)
+	updated, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
+		ID:                   account.ID(),
+		UserID:               account.UserID(),
+		Name:                 account.Name(),
+		Type:                 account.Type(),
+		Balance:              account.Balance(),
+		InitialBalance:       account.InitialBalance(),
+		IncludeInNetWorth:    account.IncludeInNetWorth(),
+		IncludeInDailyBudget: account.IncludeInDailyBudget(),
+		ArchivedAt:           nil,
+		CreatedAt:            account.CreatedAt(),
+		UpdatedAt:            restoredAt,
+	})
+	if err != nil {
+		return domainaccounting.Account{}, err
+	}
+
+	u.store.accounts[accountID] = updated
+	return updated, nil
 }
 
 type categoryGetUseCase struct {
