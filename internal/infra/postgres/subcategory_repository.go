@@ -109,6 +109,39 @@ LIMIT 1
 	return subcategory, nil
 }
 
+func (r *SubcategoryRepository) FindByID(
+	ctx context.Context,
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+) (domaincatalog.Subcategory, error) {
+	const query = `
+SELECT
+	id::text,
+	user_id::text,
+	category_id::text,
+	name,
+	sort_order,
+	archived_at,
+	created_at,
+	updated_at
+FROM subcategories
+WHERE id = $1
+  AND user_id = $2
+LIMIT 1
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	subcategory, err := scanSubcategory(db.QueryRow(ctx, query, string(subcategoryID), string(userID)))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
+		}
+		return domaincatalog.Subcategory{}, fmt.Errorf("select subcategory by id: %w", err)
+	}
+
+	return subcategory, nil
+}
+
 func (r *SubcategoryRepository) ListSubcategoriesByUserID(
 	ctx context.Context,
 	userID shared.UserID,
@@ -127,6 +160,92 @@ func (r *SubcategoryRepository) ListByCategoryID(
 	}
 
 	return r.list(ctx, userID, &categoryID, includeArchived)
+}
+
+func (r *SubcategoryRepository) UpdateByID(ctx context.Context, subcategory domaincatalog.Subcategory) error {
+	const query = `
+UPDATE subcategories
+SET name = $3,
+    sort_order = $4,
+    updated_at = $5
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(
+		ctx,
+		query,
+		string(subcategory.ID()),
+		string(subcategory.UserID()),
+		subcategory.Name(),
+		subcategory.SortOrder(),
+		subcategory.UpdatedAt(),
+	)
+	if err != nil {
+		if isUniqueViolation(err, "ux_subcategories_category_name_active") {
+			return appcatalog.ErrDuplicateActiveSubcategoryName
+		}
+		return fmt.Errorf("update subcategory by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrSubcategoryNotFound
+	}
+
+	return nil
+}
+
+func (r *SubcategoryRepository) ArchiveByID(
+	ctx context.Context,
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+	archivedAt time.Time,
+) error {
+	const query = `
+UPDATE subcategories
+SET archived_at = $3,
+    updated_at = $3
+WHERE id = $1
+  AND user_id = $2
+  AND archived_at IS NULL
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(subcategoryID), string(userID), archivedAt)
+	if err != nil {
+		return fmt.Errorf("archive subcategory by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrSubcategoryNotFound
+	}
+
+	return nil
+}
+
+func (r *SubcategoryRepository) RestoreByID(
+	ctx context.Context,
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+	updatedAt time.Time,
+) error {
+	const query = `
+UPDATE subcategories
+SET archived_at = NULL,
+    updated_at = $3
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(subcategoryID), string(userID), updatedAt)
+	if err != nil {
+		return fmt.Errorf("restore subcategory by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrSubcategoryNotFound
+	}
+
+	return nil
 }
 
 func (r *SubcategoryRepository) ArchiveByCategoryID(

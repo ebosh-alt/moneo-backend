@@ -132,6 +132,11 @@ func NewAPI(cfg Config) (*API, error) {
 	categoryUpdateService := appcatalog.NewUpdateCategoryService(categoryRepository, systemClock)
 	categoryArchiveService := appcatalog.NewArchiveCategoryService(categoryRepository, subcategoryRepository, systemClock)
 	categoryRestoreService := appcatalog.NewRestoreCategoryService(categoryRepository, subcategoryRepository, systemClock)
+	subcategoryCreateService := appcatalog.NewCreateSubcategoryService(subcategoryRepository, categoryRepository, ids, systemClock)
+	subcategoryListByCategoryService := appcatalog.NewListSubcategoriesByCategoryService(subcategoryRepository, categoryRepository)
+	subcategoryUpdateService := appcatalog.NewUpdateSubcategoryService(subcategoryRepository, systemClock)
+	subcategoryArchiveService := appcatalog.NewArchiveSubcategoryService(subcategoryRepository, systemClock)
+	subcategoryRestoreService := appcatalog.NewRestoreSubcategoryService(subcategoryRepository, categoryRepository, systemClock)
 	subcategoryQueryService := appcatalog.NewSubcategoryQueryService(subcategoryRepository)
 	catalogHandler := transporthttp.NewCatalogHandler(
 		accountCreateService,
@@ -147,6 +152,11 @@ func NewAPI(cfg Config) (*API, error) {
 		categoryUpdateService,
 		categoryArchiveService,
 		categoryRestoreService,
+		subcategoryCreateService,
+		subcategoryListByCategoryService,
+		subcategoryUpdateService,
+		subcategoryArchiveService,
+		subcategoryRestoreService,
 		subcategoryQueryService,
 		subcategoryQueryService,
 	)

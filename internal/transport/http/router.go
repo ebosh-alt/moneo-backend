@@ -82,7 +82,12 @@ func registerCatalogRoutes(routes gin.IRoutes, handler *CatalogHandler) {
 	routes.POST("/categories/:categoryId/restore", handler.RestoreCategory)
 	routes.PATCH("/categories/:categoryId", handler.PatchCategory)
 	routes.DELETE("/categories/:categoryId", handler.DeleteCategory)
+	routes.POST("/categories/:categoryId/subcategories", handler.CreateSubcategory)
+	routes.GET("/categories/:categoryId/subcategories", handler.ListCategorySubcategories)
 	routes.GET("/categories/:categoryId", handler.GetCategory)
+	routes.POST("/subcategories/:subcategoryId/restore", handler.RestoreSubcategory)
+	routes.PATCH("/subcategories/:subcategoryId", handler.PatchSubcategory)
+	routes.DELETE("/subcategories/:subcategoryId", handler.DeleteSubcategory)
 	routes.GET("/subcategories", handler.ListSubcategories)
 	routes.GET("/subcategories/:subcategoryId", handler.GetSubcategory)
 }

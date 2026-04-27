@@ -80,22 +80,47 @@ type SubcategoryListUseCase interface {
 	ListByUserID(ctx context.Context, userID shared.UserID) ([]domaincatalog.Subcategory, error)
 }
 
+type SubcategoryCreateUseCase interface {
+	Create(ctx context.Context, input appcatalog.CreateSubcategoryInput) (domaincatalog.Subcategory, error)
+}
+
+type SubcategoryListByCategoryUseCase interface {
+	List(ctx context.Context, input appcatalog.ListSubcategoriesByCategoryInput) ([]domaincatalog.Subcategory, error)
+}
+
+type SubcategoryUpdateUseCase interface {
+	Update(ctx context.Context, input appcatalog.UpdateSubcategoryInput) (domaincatalog.Subcategory, error)
+}
+
+type SubcategoryArchiveUseCase interface {
+	Archive(ctx context.Context, userID shared.UserID, subcategoryID shared.SubcategoryID) (domaincatalog.Subcategory, error)
+}
+
+type SubcategoryRestoreUseCase interface {
+	Restore(ctx context.Context, userID shared.UserID, subcategoryID shared.SubcategoryID) (domaincatalog.Subcategory, error)
+}
+
 type CatalogHandler struct {
-	accountsCreate    AccountCreateUseCase
-	accountsGet       AccountGetUseCase
-	accountsList      AccountListUseCase
-	accountsSummary   AccountSummaryUseCase
-	accountsArchive   AccountArchiveUseCase
-	accountsRestore   AccountRestoreUseCase
-	accountsUpdate    AccountUpdateUseCase
-	categoriesCreate  CategoryCreateUseCase
-	categoriesGet     CategoryGetUseCase
-	categoriesList    CategoryListUseCase
-	categoriesUpdate  CategoryUpdateUseCase
-	categoriesArchive CategoryArchiveUseCase
-	categoriesRestore CategoryRestoreUseCase
-	subcategoriesGet  SubcategoryGetUseCase
-	subcategoriesList SubcategoryListUseCase
+	accountsCreate              AccountCreateUseCase
+	accountsGet                 AccountGetUseCase
+	accountsList                AccountListUseCase
+	accountsSummary             AccountSummaryUseCase
+	accountsArchive             AccountArchiveUseCase
+	accountsRestore             AccountRestoreUseCase
+	accountsUpdate              AccountUpdateUseCase
+	categoriesCreate            CategoryCreateUseCase
+	categoriesGet               CategoryGetUseCase
+	categoriesList              CategoryListUseCase
+	categoriesUpdate            CategoryUpdateUseCase
+	categoriesArchive           CategoryArchiveUseCase
+	categoriesRestore           CategoryRestoreUseCase
+	subcategoriesCreate         SubcategoryCreateUseCase
+	subcategoriesListByCategory SubcategoryListByCategoryUseCase
+	subcategoriesUpdate         SubcategoryUpdateUseCase
+	subcategoriesArchive        SubcategoryArchiveUseCase
+	subcategoriesRestore        SubcategoryRestoreUseCase
+	subcategoriesGet            SubcategoryGetUseCase
+	subcategoriesList           SubcategoryListUseCase
 }
 
 func NewCatalogHandler(
@@ -112,25 +137,35 @@ func NewCatalogHandler(
 	categoriesUpdate CategoryUpdateUseCase,
 	categoriesArchive CategoryArchiveUseCase,
 	categoriesRestore CategoryRestoreUseCase,
+	subcategoriesCreate SubcategoryCreateUseCase,
+	subcategoriesListByCategory SubcategoryListByCategoryUseCase,
+	subcategoriesUpdate SubcategoryUpdateUseCase,
+	subcategoriesArchive SubcategoryArchiveUseCase,
+	subcategoriesRestore SubcategoryRestoreUseCase,
 	subcategoriesGet SubcategoryGetUseCase,
 	subcategoriesList SubcategoryListUseCase,
 ) *CatalogHandler {
 	return &CatalogHandler{
-		accountsCreate:    accountsCreate,
-		accountsGet:       accountsGet,
-		accountsList:      accountsList,
-		accountsSummary:   accountsSummary,
-		accountsArchive:   accountsArchive,
-		accountsRestore:   accountsRestore,
-		accountsUpdate:    accountsUpdate,
-		categoriesCreate:  categoriesCreate,
-		categoriesGet:     categoriesGet,
-		categoriesList:    categoriesList,
-		categoriesUpdate:  categoriesUpdate,
-		categoriesArchive: categoriesArchive,
-		categoriesRestore: categoriesRestore,
-		subcategoriesGet:  subcategoriesGet,
-		subcategoriesList: subcategoriesList,
+		accountsCreate:              accountsCreate,
+		accountsGet:                 accountsGet,
+		accountsList:                accountsList,
+		accountsSummary:             accountsSummary,
+		accountsArchive:             accountsArchive,
+		accountsRestore:             accountsRestore,
+		accountsUpdate:              accountsUpdate,
+		categoriesCreate:            categoriesCreate,
+		categoriesGet:               categoriesGet,
+		categoriesList:              categoriesList,
+		categoriesUpdate:            categoriesUpdate,
+		categoriesArchive:           categoriesArchive,
+		categoriesRestore:           categoriesRestore,
+		subcategoriesCreate:         subcategoriesCreate,
+		subcategoriesListByCategory: subcategoriesListByCategory,
+		subcategoriesUpdate:         subcategoriesUpdate,
+		subcategoriesArchive:        subcategoriesArchive,
+		subcategoriesRestore:        subcategoriesRestore,
+		subcategoriesGet:            subcategoriesGet,
+		subcategoriesList:           subcategoriesList,
 	}
 }
 
@@ -165,6 +200,16 @@ type patchCategoryRequest struct {
 	Name      *string `json:"name"`
 	Type      *string `json:"type"`
 	Color     *string `json:"color"`
+	SortOrder *int    `json:"sortOrder"`
+}
+
+type createSubcategoryRequest struct {
+	Name      string `json:"name"`
+	SortOrder *int   `json:"sortOrder"`
+}
+
+type patchSubcategoryRequest struct {
+	Name      *string `json:"name"`
 	SortOrder *int    `json:"sortOrder"`
 }
 
@@ -223,11 +268,14 @@ type categorySubcategoryResponse struct {
 }
 
 type subcategoryResponse struct {
-	ID         string    `json:"id"`
-	CategoryID string    `json:"categoryId"`
-	Name       string    `json:"name"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID         string     `json:"id"`
+	CategoryID string     `json:"categoryId"`
+	Name       string     `json:"name"`
+	SortOrder  int        `json:"sortOrder"`
+	IsArchived bool       `json:"isArchived"`
+	ArchivedAt *time.Time `json:"archivedAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 func (h *CatalogHandler) CreateAccount(c *gin.Context) {
@@ -986,6 +1034,270 @@ func (h *CatalogHandler) ListCategories(c *gin.Context) {
 	})
 }
 
+func (h *CatalogHandler) ListCategorySubcategories(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.subcategoriesListByCategory == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	categoryID := strings.TrimSpace(c.Param("categoryId"))
+	if categoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "categoryId",
+			Message: "categoryId is required",
+		})
+		return
+	}
+
+	limit, offset, details := parseLimitOffset(c)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	includeArchived := false
+	if rawIncludeArchived := c.Query("includeArchived"); rawIncludeArchived != "" {
+		parsed, parseErr := strconv.ParseBool(rawIncludeArchived)
+		if parseErr != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "includeArchived",
+				Message: "includeArchived must be a boolean",
+			})
+			return
+		}
+		includeArchived = parsed
+	}
+
+	subcategories, err := h.subcategoriesListByCategory.List(c.Request.Context(), appcatalog.ListSubcategoriesByCategoryInput{
+		UserID:          user.ID,
+		CategoryID:      shared.CategoryID(categoryID),
+		IncludeArchived: includeArchived,
+	})
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	items := make([]subcategoryResponse, 0, len(subcategories))
+	for _, subcategory := range subcategories {
+		items = append(items, toSubcategoryResponse(subcategory))
+	}
+
+	pagedItems, total := paginate(items, limit, offset)
+	c.JSON(http.StatusOK, paginatedResponse[subcategoryResponse]{
+		Items: pagedItems,
+		Pagination: paginationMeta{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	})
+}
+
+func (h *CatalogHandler) CreateSubcategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.subcategoriesCreate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	categoryID := strings.TrimSpace(c.Param("categoryId"))
+	if categoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "categoryId",
+			Message: "categoryId is required",
+		})
+		return
+	}
+
+	var request createSubcategoryRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "body",
+			Message: "request body is invalid",
+		})
+		return
+	}
+
+	input, details := validateCreateSubcategoryRequest(user.ID, shared.CategoryID(categoryID), request)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	subcategory, err := h.subcategoriesCreate.Create(c.Request.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Subcategory with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "subcategory name must be unique per category",
+			})
+		case errors.Is(err, appcatalog.ErrParentCategoryArchived):
+			writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{
+				Field:   "categoryId",
+				Message: "parent category is archived",
+			})
+		case errors.Is(err, domaincatalog.ErrInvalidSubcategoryName):
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "name",
+				Message: "name must be between 1 and 100 characters",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	c.JSON(http.StatusCreated, toSubcategoryResponse(subcategory))
+}
+
+func (h *CatalogHandler) PatchSubcategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.subcategoriesUpdate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	subcategoryID := strings.TrimSpace(c.Param("subcategoryId"))
+	if subcategoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "subcategoryId",
+			Message: "subcategoryId is required",
+		})
+		return
+	}
+
+	var request patchSubcategoryRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "body",
+			Message: "request body is invalid",
+		})
+		return
+	}
+
+	input, details := validatePatchSubcategoryRequest(user.ID, shared.SubcategoryID(subcategoryID), request)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	subcategory, err := h.subcategoriesUpdate.Update(c.Request.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Subcategory with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "subcategory name must be unique per category",
+			})
+		case errors.Is(err, domaincatalog.ErrInvalidSubcategoryName):
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "name",
+				Message: "name must be between 1 and 100 characters",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, toSubcategoryResponse(subcategory))
+}
+
+func (h *CatalogHandler) DeleteSubcategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.subcategoriesArchive == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	subcategoryID := strings.TrimSpace(c.Param("subcategoryId"))
+	if subcategoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "subcategoryId",
+			Message: "subcategoryId is required",
+		})
+		return
+	}
+
+	subcategory, err := h.subcategoriesArchive.Archive(c.Request.Context(), user.ID, shared.SubcategoryID(subcategoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrSubcategoryNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, toSubcategoryResponse(subcategory))
+}
+
+func (h *CatalogHandler) RestoreSubcategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.subcategoriesRestore == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	subcategoryID := strings.TrimSpace(c.Param("subcategoryId"))
+	if subcategoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "subcategoryId",
+			Message: "subcategoryId is required",
+		})
+		return
+	}
+
+	subcategory, err := h.subcategoriesRestore.Restore(c.Request.Context(), user.ID, shared.SubcategoryID(subcategoryID))
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appcatalog.ErrParentCategoryArchived):
+			writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{
+				Field:   "categoryId",
+				Message: "parent category is archived",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, toSubcategoryResponse(subcategory))
+}
+
 func (h *CatalogHandler) GetSubcategory(c *gin.Context) {
 	user, ok := UserFromContext(c)
 	if !ok {
@@ -1017,13 +1329,7 @@ func (h *CatalogHandler) GetSubcategory(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, subcategoryResponse{
-		ID:         string(subcategory.ID()),
-		CategoryID: string(subcategory.CategoryID()),
-		Name:       subcategory.Name(),
-		CreatedAt:  subcategory.CreatedAt(),
-		UpdatedAt:  subcategory.UpdatedAt(),
-	})
+	c.JSON(http.StatusOK, toSubcategoryResponse(subcategory))
 }
 
 func (h *CatalogHandler) ListSubcategories(c *gin.Context) {
@@ -1051,13 +1357,7 @@ func (h *CatalogHandler) ListSubcategories(c *gin.Context) {
 
 	items := make([]subcategoryResponse, 0, len(subcategories))
 	for _, subcategory := range subcategories {
-		items = append(items, subcategoryResponse{
-			ID:         string(subcategory.ID()),
-			CategoryID: string(subcategory.CategoryID()),
-			Name:       subcategory.Name(),
-			CreatedAt:  subcategory.CreatedAt(),
-			UpdatedAt:  subcategory.UpdatedAt(),
-		})
+		items = append(items, toSubcategoryResponse(subcategory))
 	}
 
 	pagedItems, total := paginate(items, limit, offset)
@@ -1373,6 +1673,77 @@ func validatePatchCategoryRequest(
 	}, nil
 }
 
+func validateCreateSubcategoryRequest(
+	userID shared.UserID,
+	categoryID shared.CategoryID,
+	request createSubcategoryRequest,
+) (appcatalog.CreateSubcategoryInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 2)
+
+	trimmedName := strings.TrimSpace(request.Name)
+	if trimmedName == "" {
+		details = append(details, catalogFieldError{
+			Field:   "name",
+			Message: "name is required",
+		})
+	} else if len([]rune(trimmedName)) > 100 {
+		details = append(details, catalogFieldError{
+			Field:   "name",
+			Message: "name must be between 1 and 100 characters",
+		})
+	}
+
+	if len(details) > 0 {
+		return appcatalog.CreateSubcategoryInput{}, details
+	}
+
+	return appcatalog.CreateSubcategoryInput{
+		UserID:     userID,
+		CategoryID: categoryID,
+		Name:       trimmedName,
+		SortOrder:  request.SortOrder,
+	}, nil
+}
+
+func validatePatchSubcategoryRequest(
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+	request patchSubcategoryRequest,
+) (appcatalog.UpdateSubcategoryInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 2)
+
+	if request.Name == nil && request.SortOrder == nil {
+		details = append(details, catalogFieldError{
+			Field:   "body",
+			Message: "at least one mutable field is required",
+		})
+	}
+
+	var name *string
+	if request.Name != nil {
+		trimmedName := strings.TrimSpace(*request.Name)
+		if trimmedName == "" || len([]rune(trimmedName)) > 100 {
+			details = append(details, catalogFieldError{
+				Field:   "name",
+				Message: "name must be between 1 and 100 characters",
+			})
+		} else {
+			name = &trimmedName
+		}
+	}
+
+	if len(details) > 0 {
+		return appcatalog.UpdateSubcategoryInput{}, details
+	}
+
+	return appcatalog.UpdateSubcategoryInput{
+		UserID:        userID,
+		SubcategoryID: subcategoryID,
+		Name:          name,
+		SortOrder:     request.SortOrder,
+	}, nil
+}
+
 func toAccountResponse(account domainaccounting.Account) (accountResponse, error) {
 	balance, err := FormatMoneyToREST(account.Balance())
 	if err != nil {
@@ -1424,6 +1795,19 @@ func toCategoryResponse(
 		CreatedAt:     category.CreatedAt(),
 		UpdatedAt:     category.UpdatedAt(),
 		Subcategories: items,
+	}
+}
+
+func toSubcategoryResponse(subcategory domaincatalog.Subcategory) subcategoryResponse {
+	return subcategoryResponse{
+		ID:         string(subcategory.ID()),
+		CategoryID: string(subcategory.CategoryID()),
+		Name:       subcategory.Name(),
+		SortOrder:  subcategory.SortOrder(),
+		IsArchived: subcategory.ArchivedAt() != nil,
+		ArchivedAt: subcategory.ArchivedAt(),
+		CreatedAt:  subcategory.CreatedAt(),
+		UpdatedAt:  subcategory.UpdatedAt(),
 	}
 }
 

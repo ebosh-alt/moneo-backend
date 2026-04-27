@@ -755,6 +755,375 @@ func TestCategoryMutationOwnershipIsolation(t *testing.T) {
 	}
 }
 
+func TestSubcategoryCRUDArchiveRestoreFlow(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-subcategory-crud@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+	categoryID := store.mustCreateCategoryWithParams(t, categoryFixtureParams{
+		UserID:    userID,
+		Name:      "Food",
+		Type:      domaincatalog.CategoryTypeRequired,
+		SortOrder: 100,
+	})
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	invalidCreateRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		map[string]any{"name": " "},
+		headers,
+	)
+	if invalidCreateRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected create validation status 400, got %d", invalidCreateRec.Code)
+	}
+	var invalidCreatePayload structuredErrorResponse
+	decodeJSONResponse(t, invalidCreateRec, &invalidCreatePayload)
+	assertErrorDetailField(t, invalidCreatePayload.Error.Details, "name")
+
+	createRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		map[string]any{
+			"name":      "Groceries",
+			"sortOrder": 120,
+		},
+		headers,
+	)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected create status 201, got %d, body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createdPayload struct {
+		ID         string  `json:"id"`
+		CategoryID string  `json:"categoryId"`
+		Name       string  `json:"name"`
+		SortOrder  int     `json:"sortOrder"`
+		IsArchived bool    `json:"isArchived"`
+		ArchivedAt *string `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, createRec, &createdPayload)
+	if createdPayload.Name != "Groceries" {
+		t.Fatalf("expected created subcategory name Groceries, got %q", createdPayload.Name)
+	}
+	if createdPayload.CategoryID != string(categoryID) {
+		t.Fatalf("expected categoryId %q, got %q", categoryID, createdPayload.CategoryID)
+	}
+	if createdPayload.SortOrder != 120 {
+		t.Fatalf("expected created sortOrder 120, got %d", createdPayload.SortOrder)
+	}
+	if createdPayload.IsArchived {
+		t.Fatal("expected created subcategory to be active")
+	}
+	if createdPayload.ArchivedAt != nil {
+		t.Fatalf("expected created archivedAt nil, got %v", createdPayload.ArchivedAt)
+	}
+
+	duplicateRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		map[string]any{"name": "groceries"},
+		headers,
+	)
+	if duplicateRec.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate status 409, got %d", duplicateRec.Code)
+	}
+	var duplicatePayload structuredErrorResponse
+	decodeJSONResponse(t, duplicateRec, &duplicatePayload)
+	if duplicatePayload.Error.Code != "conflict" {
+		t.Fatalf("expected conflict code, got %q", duplicatePayload.Error.Code)
+	}
+	assertErrorDetailField(t, duplicatePayload.Error.Details, "name")
+
+	listRec := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories?includeArchived=false",
+		nil,
+		headers,
+	)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listRec.Code)
+	}
+	var listPayload paginatedEnvelope
+	decodeJSONResponse(t, listRec, &listPayload)
+	if len(listPayload.Items) != 1 {
+		t.Fatalf("expected 1 active subcategory, got %d", len(listPayload.Items))
+	}
+	if listPayload.Items[0]["name"] != "Groceries" {
+		t.Fatalf("expected listed name Groceries, got %v", listPayload.Items[0]["name"])
+	}
+	if listPayload.Items[0]["sortOrder"] != float64(120) {
+		t.Fatalf("expected listed sortOrder 120, got %v", listPayload.Items[0]["sortOrder"])
+	}
+
+	subcategoryID := createdPayload.ID
+	patchRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPatch,
+		"/api/v1/subcategories/"+subcategoryID,
+		map[string]any{
+			"name":      "Supermarkets",
+			"sortOrder": 130,
+		},
+		headers,
+	)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("expected patch status 200, got %d, body=%s", patchRec.Code, patchRec.Body.String())
+	}
+	var patchedPayload struct {
+		Name      string `json:"name"`
+		SortOrder int    `json:"sortOrder"`
+	}
+	decodeJSONResponse(t, patchRec, &patchedPayload)
+	if patchedPayload.Name != "Supermarkets" {
+		t.Fatalf("expected patched name Supermarkets, got %q", patchedPayload.Name)
+	}
+	if patchedPayload.SortOrder != 130 {
+		t.Fatalf("expected patched sortOrder 130, got %d", patchedPayload.SortOrder)
+	}
+
+	archiveRec := performJSONRequest(t, router, http.MethodDelete, "/api/v1/subcategories/"+subcategoryID, nil, headers)
+	if archiveRec.Code != http.StatusOK {
+		t.Fatalf("expected delete/archive status 200, got %d, body=%s", archiveRec.Code, archiveRec.Body.String())
+	}
+	var archivedPayload struct {
+		IsArchived bool    `json:"isArchived"`
+		ArchivedAt *string `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, archiveRec, &archivedPayload)
+	if !archivedPayload.IsArchived {
+		t.Fatal("expected subcategory archived after delete")
+	}
+	if archivedPayload.ArchivedAt == nil || strings.TrimSpace(*archivedPayload.ArchivedAt) == "" {
+		t.Fatal("expected archivedAt in archived subcategory response")
+	}
+
+	activeAfterArchiveRec := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		nil,
+		headers,
+	)
+	if activeAfterArchiveRec.Code != http.StatusOK {
+		t.Fatalf("expected active list status 200, got %d", activeAfterArchiveRec.Code)
+	}
+	var activeAfterArchivePayload paginatedEnvelope
+	decodeJSONResponse(t, activeAfterArchiveRec, &activeAfterArchivePayload)
+	if len(activeAfterArchivePayload.Items) != 0 {
+		t.Fatalf("expected no active subcategories after archive, got %d", len(activeAfterArchivePayload.Items))
+	}
+
+	withArchivedRec := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories?includeArchived=true",
+		nil,
+		headers,
+	)
+	if withArchivedRec.Code != http.StatusOK {
+		t.Fatalf("expected includeArchived list status 200, got %d", withArchivedRec.Code)
+	}
+	var withArchivedPayload paginatedEnvelope
+	decodeJSONResponse(t, withArchivedRec, &withArchivedPayload)
+	if len(withArchivedPayload.Items) != 1 {
+		t.Fatalf("expected 1 archived subcategory in includeArchived list, got %d", len(withArchivedPayload.Items))
+	}
+	if withArchivedPayload.Items[0]["isArchived"] != true {
+		t.Fatalf("expected archived item isArchived=true, got %v", withArchivedPayload.Items[0]["isArchived"])
+	}
+
+	restoreRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/subcategories/"+subcategoryID+"/restore",
+		nil,
+		headers,
+	)
+	if restoreRec.Code != http.StatusOK {
+		t.Fatalf("expected restore status 200, got %d, body=%s", restoreRec.Code, restoreRec.Body.String())
+	}
+	var restoredPayload struct {
+		IsArchived bool `json:"isArchived"`
+		ArchivedAt any  `json:"archivedAt"`
+	}
+	decodeJSONResponse(t, restoreRec, &restoredPayload)
+	if restoredPayload.IsArchived {
+		t.Fatal("expected restored subcategory to be active")
+	}
+	if restoredPayload.ArchivedAt != nil {
+		t.Fatalf("expected restored archivedAt nil, got %v", restoredPayload.ArchivedAt)
+	}
+}
+
+func TestSubcategoryOwnershipIsolation(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	ownerToken := registerAndGetAccessToken(t, router, "catalog-subcategory-owner@example.com")
+	foreignToken := registerAndGetAccessToken(t, router, "catalog-subcategory-foreign@example.com")
+	ownerID := userIDFromToken(t, fixture, ownerToken)
+
+	categoryID := store.mustCreateCategory(t, ownerID, "Owner category")
+	subcategoryID := store.mustCreateSubcategory(t, ownerID, categoryID, "Owner subcategory")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + foreignToken,
+	}
+
+	testCases := []struct {
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{method: http.MethodGet, path: "/api/v1/categories/" + string(categoryID) + "/subcategories"},
+		{method: http.MethodPost, path: "/api/v1/categories/" + string(categoryID) + "/subcategories", body: map[string]any{"name": "Foreign create"}},
+		{method: http.MethodPatch, path: "/api/v1/subcategories/" + string(subcategoryID), body: map[string]any{"name": "Foreign patch"}},
+		{method: http.MethodDelete, path: "/api/v1/subcategories/" + string(subcategoryID)},
+		{method: http.MethodPost, path: "/api/v1/subcategories/" + string(subcategoryID) + "/restore"},
+	}
+
+	for _, tc := range testCases {
+		rec := performJSONRequest(t, router, tc.method, tc.path, tc.body, headers)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404 for %s %s, got %d", tc.method, tc.path, rec.Code)
+		}
+		var payload structuredErrorResponse
+		decodeJSONResponse(t, rec, &payload)
+		if payload.Error.Code != "not_found" {
+			t.Fatalf("expected not_found code for %s %s, got %q", tc.method, tc.path, payload.Error.Code)
+		}
+	}
+}
+
+func TestSubcategoryCreateRejectsArchivedParentCategory(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-subcategory-create-archived-parent@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+	categoryID := store.mustCreateCategory(t, userID, "Food")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	archiveCategoryRec := performJSONRequest(t, router, http.MethodDelete, "/api/v1/categories/"+string(categoryID), nil, headers)
+	if archiveCategoryRec.Code != http.StatusOK {
+		t.Fatalf("expected archive category status 200, got %d", archiveCategoryRec.Code)
+	}
+
+	createRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		map[string]any{"name": "Groceries"},
+		headers,
+	)
+	if createRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected create under archived parent status 422, got %d", createRec.Code)
+	}
+
+	var payload structuredErrorResponse
+	decodeJSONResponse(t, createRec, &payload)
+	if payload.Error.Code != "business_rule_violation" {
+		t.Fatalf("expected business_rule_violation, got %q", payload.Error.Code)
+	}
+	assertErrorDetailField(t, payload.Error.Details, "categoryId")
+}
+
+func TestSubcategoryRestoreRejectsWhenParentCategoryArchived(t *testing.T) {
+	store := newCatalogTestStore(t)
+	fixture := newCatalogRouterWithAuthFixture(t, store)
+	router := fixture.router
+
+	accessToken := registerAndGetAccessToken(t, router, "catalog-subcategory-restore-archived-parent@example.com")
+	userID := userIDFromToken(t, fixture, accessToken)
+	categoryID := store.mustCreateCategory(t, userID, "Food")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	createRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/categories/"+string(categoryID)+"/subcategories",
+		map[string]any{"name": "Groceries"},
+		headers,
+	)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected create subcategory status 201, got %d, body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createPayload struct {
+		ID string `json:"id"`
+	}
+	decodeJSONResponse(t, createRec, &createPayload)
+
+	archiveSubcategoryRec := performJSONRequest(
+		t,
+		router,
+		http.MethodDelete,
+		"/api/v1/subcategories/"+createPayload.ID,
+		nil,
+		headers,
+	)
+	if archiveSubcategoryRec.Code != http.StatusOK {
+		t.Fatalf("expected archive subcategory status 200, got %d", archiveSubcategoryRec.Code)
+	}
+
+	archiveCategoryRec := performJSONRequest(
+		t,
+		router,
+		http.MethodDelete,
+		"/api/v1/categories/"+string(categoryID),
+		nil,
+		headers,
+	)
+	if archiveCategoryRec.Code != http.StatusOK {
+		t.Fatalf("expected archive category status 200, got %d", archiveCategoryRec.Code)
+	}
+
+	restoreRec := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/subcategories/"+createPayload.ID+"/restore",
+		nil,
+		headers,
+	)
+	if restoreRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected restore with archived parent status 422, got %d", restoreRec.Code)
+	}
+
+	var payload structuredErrorResponse
+	decodeJSONResponse(t, restoreRec, &payload)
+	if payload.Error.Code != "business_rule_violation" {
+		t.Fatalf("expected business_rule_violation code, got %q", payload.Error.Code)
+	}
+	assertErrorDetailField(t, payload.Error.Details, "categoryId")
+}
+
 func TestArchiveAndRestoreAccountFlowIsIdempotent(t *testing.T) {
 	store := newCatalogTestStore(t)
 	fixture := newCatalogRouterWithAuthFixture(t, store)
@@ -908,6 +1277,11 @@ func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) cata
 		categoryUpdateUseCase{store: store},
 		categoryArchiveUseCase{store: store},
 		categoryRestoreUseCase{store: store},
+		subcategoryCreateUseCase{store: store},
+		subcategoryListByCategoryUseCase{store: store},
+		subcategoryUpdateUseCase{store: store},
+		subcategoryArchiveUseCase{store: store},
+		subcategoryRestoreUseCase{store: store},
 		subcategoryGetUseCase{store: store},
 		subcategoryListUseCase{store: store},
 	)
@@ -992,22 +1366,20 @@ type paginatedEnvelope struct {
 }
 
 type catalogTestStore struct {
-	accountSeq          int
-	categorySeq         int
-	subcategorySeq      int
-	accounts            map[shared.AccountID]domainaccounting.Account
-	categories          map[shared.CategoryID]domaincatalog.Category
-	subcategories       map[shared.SubcategoryID]domaincatalog.Subcategory
-	subcategoryArchived map[shared.SubcategoryID]bool
+	accountSeq     int
+	categorySeq    int
+	subcategorySeq int
+	accounts       map[shared.AccountID]domainaccounting.Account
+	categories     map[shared.CategoryID]domaincatalog.Category
+	subcategories  map[shared.SubcategoryID]domaincatalog.Subcategory
 }
 
 func newCatalogTestStore(t *testing.T) *catalogTestStore {
 	t.Helper()
 	return &catalogTestStore{
-		accounts:            make(map[shared.AccountID]domainaccounting.Account),
-		categories:          make(map[shared.CategoryID]domaincatalog.Category),
-		subcategories:       make(map[shared.SubcategoryID]domaincatalog.Subcategory),
-		subcategoryArchived: make(map[shared.SubcategoryID]bool),
+		accounts:      make(map[shared.AccountID]domainaccounting.Account),
+		categories:    make(map[shared.CategoryID]domaincatalog.Category),
+		subcategories: make(map[shared.SubcategoryID]domaincatalog.Subcategory),
 	}
 }
 
@@ -1146,16 +1518,59 @@ func (s *catalogTestStore) mustCreateSubcategory(
 ) shared.SubcategoryID {
 	t.Helper()
 
+	return s.mustCreateSubcategoryWithParams(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: categoryID,
+		Name:       name,
+	})
+}
+
+type subcategoryFixtureParams struct {
+	UserID     shared.UserID
+	CategoryID shared.CategoryID
+	Name       string
+	SortOrder  int
+	ArchivedAt *time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (s *catalogTestStore) mustCreateSubcategoryWithParams(
+	t *testing.T,
+	params subcategoryFixtureParams,
+) shared.SubcategoryID {
+	t.Helper()
+
 	s.subcategorySeq++
 	id := shared.SubcategoryID("sub-" + strconv.Itoa(s.subcategorySeq))
-	now := time.Date(2026, 4, 28, 12, 0, 0, s.subcategorySeq, time.UTC)
-	subcategory, err := domaincatalog.NewSubcategory(id, userID, categoryID, name, now, now)
+	createdAt := params.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Date(2026, 4, 28, 12, 0, 0, s.subcategorySeq, time.UTC)
+	}
+	updatedAt := params.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	sortOrder := params.SortOrder
+	if sortOrder == 0 {
+		sortOrder = 100
+	}
+
+	subcategory, err := domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         id,
+		UserID:     params.UserID,
+		CategoryID: params.CategoryID,
+		Name:       params.Name,
+		SortOrder:  sortOrder,
+		ArchivedAt: params.ArchivedAt,
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
+	})
 	if err != nil {
 		t.Fatalf("build subcategory fixture: %v", err)
 	}
 
 	s.subcategories[id] = subcategory
-	s.subcategoryArchived[id] = false
 	return id
 }
 
@@ -1674,7 +2089,11 @@ func (u categoryArchiveUseCase) Archive(
 			continue
 		}
 		if subcategory.CategoryID() == categoryID {
-			u.store.subcategoryArchived[subcategoryID] = true
+			archivedSubcategory, buildErr := buildSubcategoryWithArchiveState(subcategory, timePtr(archivedAt), archivedAt)
+			if buildErr != nil {
+				return domaincatalog.Category{}, buildErr
+			}
+			u.store.subcategories[subcategoryID] = archivedSubcategory
 		}
 	}
 
@@ -1719,11 +2138,234 @@ func (u categoryRestoreUseCase) Restore(
 			continue
 		}
 		if subcategory.CategoryID() == categoryID {
-			u.store.subcategoryArchived[subcategoryID] = false
+			restoredSubcategory, buildErr := buildSubcategoryWithArchiveState(subcategory, nil, restoredAt)
+			if buildErr != nil {
+				return domaincatalog.Category{}, buildErr
+			}
+			u.store.subcategories[subcategoryID] = restoredSubcategory
 		}
 	}
 
 	return updated, nil
+}
+
+type subcategoryCreateUseCase struct {
+	store *catalogTestStore
+}
+
+func (u subcategoryCreateUseCase) Create(
+	_ context.Context,
+	input appcatalog.CreateSubcategoryInput,
+) (domaincatalog.Subcategory, error) {
+	category, ok := u.store.categories[input.CategoryID]
+	if !ok || category.UserID() != input.UserID {
+		return domaincatalog.Subcategory{}, appcatalog.ErrCategoryNotFound
+	}
+	if category.ArchivedAt() != nil {
+		return domaincatalog.Subcategory{}, appcatalog.ErrParentCategoryArchived
+	}
+
+	for _, existing := range u.store.subcategories {
+		if existing.UserID() != input.UserID {
+			continue
+		}
+		if existing.CategoryID() != input.CategoryID {
+			continue
+		}
+		if existing.ArchivedAt() != nil {
+			continue
+		}
+		if strings.EqualFold(existing.Name(), input.Name) {
+			return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNameAlreadyExists
+		}
+	}
+
+	u.store.subcategorySeq++
+	id := shared.SubcategoryID("sub-" + strconv.Itoa(u.store.subcategorySeq))
+	now := time.Date(2026, 4, 28, 12, 30, 0, u.store.subcategorySeq, time.UTC)
+	sortOrder := 100
+	if input.SortOrder != nil {
+		sortOrder = *input.SortOrder
+	}
+
+	subcategory, err := domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         id,
+		UserID:     input.UserID,
+		CategoryID: input.CategoryID,
+		Name:       input.Name,
+		SortOrder:  sortOrder,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	if err != nil {
+		return domaincatalog.Subcategory{}, err
+	}
+
+	u.store.subcategories[id] = subcategory
+	return subcategory, nil
+}
+
+type subcategoryListByCategoryUseCase struct {
+	store *catalogTestStore
+}
+
+func (u subcategoryListByCategoryUseCase) List(
+	_ context.Context,
+	input appcatalog.ListSubcategoriesByCategoryInput,
+) ([]domaincatalog.Subcategory, error) {
+	parentCategory, ok := u.store.categories[input.CategoryID]
+	if !ok || parentCategory.UserID() != input.UserID {
+		return nil, appcatalog.ErrCategoryNotFound
+	}
+
+	subcategories := make([]domaincatalog.Subcategory, 0, len(u.store.subcategories))
+	for _, subcategory := range u.store.subcategories {
+		if subcategory.UserID() != input.UserID {
+			continue
+		}
+		if subcategory.CategoryID() != input.CategoryID {
+			continue
+		}
+		if !input.IncludeArchived && subcategory.ArchivedAt() != nil {
+			continue
+		}
+		subcategories = append(subcategories, subcategory)
+	}
+
+	sort.Slice(subcategories, func(i, j int) bool {
+		left := subcategories[i]
+		right := subcategories[j]
+		if left.SortOrder() != right.SortOrder() {
+			return left.SortOrder() < right.SortOrder()
+		}
+		if !left.CreatedAt().Equal(right.CreatedAt()) {
+			return left.CreatedAt().After(right.CreatedAt())
+		}
+		return string(left.ID()) < string(right.ID())
+	})
+
+	return subcategories, nil
+}
+
+type subcategoryUpdateUseCase struct {
+	store *catalogTestStore
+}
+
+func (u subcategoryUpdateUseCase) Update(
+	_ context.Context,
+	input appcatalog.UpdateSubcategoryInput,
+) (domaincatalog.Subcategory, error) {
+	subcategory, ok := u.store.subcategories[input.SubcategoryID]
+	if !ok || subcategory.UserID() != input.UserID {
+		return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
+	}
+
+	name := subcategory.Name()
+	if input.Name != nil {
+		name = *input.Name
+	}
+	sortOrder := subcategory.SortOrder()
+	if input.SortOrder != nil {
+		sortOrder = *input.SortOrder
+	}
+
+	for id, existing := range u.store.subcategories {
+		if id == input.SubcategoryID {
+			continue
+		}
+		if existing.UserID() != input.UserID {
+			continue
+		}
+		if existing.CategoryID() != subcategory.CategoryID() {
+			continue
+		}
+		if existing.ArchivedAt() != nil {
+			continue
+		}
+		if strings.EqualFold(existing.Name(), name) {
+			return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNameAlreadyExists
+		}
+	}
+
+	updatedAt := time.Date(2026, 4, 28, 16, 0, 0, 0, time.UTC)
+	updated, err := domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         subcategory.ID(),
+		UserID:     subcategory.UserID(),
+		CategoryID: subcategory.CategoryID(),
+		Name:       name,
+		SortOrder:  sortOrder,
+		ArchivedAt: subcategory.ArchivedAt(),
+		CreatedAt:  subcategory.CreatedAt(),
+		UpdatedAt:  updatedAt,
+	})
+	if err != nil {
+		return domaincatalog.Subcategory{}, err
+	}
+
+	u.store.subcategories[input.SubcategoryID] = updated
+	return updated, nil
+}
+
+type subcategoryArchiveUseCase struct {
+	store *catalogTestStore
+}
+
+func (u subcategoryArchiveUseCase) Archive(
+	_ context.Context,
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+) (domaincatalog.Subcategory, error) {
+	subcategory, ok := u.store.subcategories[subcategoryID]
+	if !ok || subcategory.UserID() != userID {
+		return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
+	}
+	if subcategory.ArchivedAt() != nil {
+		return subcategory, nil
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 16, 15, 0, 0, time.UTC)
+	archived, err := buildSubcategoryWithArchiveState(subcategory, timePtr(archivedAt), archivedAt)
+	if err != nil {
+		return domaincatalog.Subcategory{}, err
+	}
+
+	u.store.subcategories[subcategoryID] = archived
+	return archived, nil
+}
+
+type subcategoryRestoreUseCase struct {
+	store *catalogTestStore
+}
+
+func (u subcategoryRestoreUseCase) Restore(
+	_ context.Context,
+	userID shared.UserID,
+	subcategoryID shared.SubcategoryID,
+) (domaincatalog.Subcategory, error) {
+	subcategory, ok := u.store.subcategories[subcategoryID]
+	if !ok || subcategory.UserID() != userID {
+		return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
+	}
+	if subcategory.ArchivedAt() == nil {
+		return subcategory, nil
+	}
+
+	parentCategory, ok := u.store.categories[subcategory.CategoryID()]
+	if !ok || parentCategory.UserID() != userID {
+		return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
+	}
+	if parentCategory.ArchivedAt() != nil {
+		return domaincatalog.Subcategory{}, appcatalog.ErrParentCategoryArchived
+	}
+
+	restoredAt := time.Date(2026, 4, 28, 16, 30, 0, 0, time.UTC)
+	restored, err := buildSubcategoryWithArchiveState(subcategory, nil, restoredAt)
+	if err != nil {
+		return domaincatalog.Subcategory{}, err
+	}
+
+	u.store.subcategories[subcategoryID] = restored
+	return restored, nil
 }
 
 type subcategoryGetUseCase struct {
@@ -1736,7 +2378,7 @@ func (u subcategoryGetUseCase) GetByID(
 	subcategoryID shared.SubcategoryID,
 ) (domaincatalog.Subcategory, error) {
 	subcategory, ok := u.store.subcategories[subcategoryID]
-	if !ok || subcategory.UserID() != userID || u.store.subcategoryArchived[subcategoryID] {
+	if !ok || subcategory.UserID() != userID || subcategory.ArchivedAt() != nil {
 		return domaincatalog.Subcategory{}, appcatalog.ErrSubcategoryNotFound
 	}
 
@@ -1749,11 +2391,11 @@ type subcategoryListUseCase struct {
 
 func (u subcategoryListUseCase) ListByUserID(_ context.Context, userID shared.UserID) ([]domaincatalog.Subcategory, error) {
 	subcategories := make([]domaincatalog.Subcategory, 0, len(u.store.subcategories))
-	for subcategoryID, subcategory := range u.store.subcategories {
+	for _, subcategory := range u.store.subcategories {
 		if subcategory.UserID() != userID {
 			continue
 		}
-		if u.store.subcategoryArchived[subcategoryID] {
+		if subcategory.ArchivedAt() != nil {
 			continue
 		}
 		subcategories = append(subcategories, subcategory)
@@ -1763,6 +2405,28 @@ func (u subcategoryListUseCase) ListByUserID(_ context.Context, userID shared.Us
 		return string(subcategories[i].ID()) < string(subcategories[j].ID())
 	})
 	return subcategories, nil
+}
+
+func buildSubcategoryWithArchiveState(
+	source domaincatalog.Subcategory,
+	archivedAt *time.Time,
+	updatedAt time.Time,
+) (domaincatalog.Subcategory, error) {
+	return domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         source.ID(),
+		UserID:     source.UserID(),
+		CategoryID: source.CategoryID(),
+		Name:       source.Name(),
+		SortOrder:  source.SortOrder(),
+		ArchivedAt: archivedAt,
+		CreatedAt:  source.CreatedAt(),
+		UpdatedAt:  updatedAt,
+	})
+}
+
+func timePtr(value time.Time) *time.Time {
+	valueCopy := value
+	return &valueCopy
 }
 
 func boolPtr(value bool) *bool {
