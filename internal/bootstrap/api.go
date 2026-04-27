@@ -124,7 +124,8 @@ func NewAPI(cfg Config) (*API, error) {
 	accountRestoreService := appaccounting.NewRestoreAccountService(accountRepository, systemClock)
 	accountUpdateService := appaccounting.NewUpdateAccountService(accountRepository, systemClock)
 
-	categoryQueryService := appcatalog.NewCategoryQueryService(emptyCategoryRepository{})
+	categoryRepository := postgres.NewCategoryRepository(pool)
+	categoryQueryService := appcatalog.NewCategoryQueryService(categoryRepository)
 	subcategoryQueryService := appcatalog.NewSubcategoryQueryService(emptySubcategoryRepository{})
 	catalogHandler := transporthttp.NewCatalogHandler(
 		accountCreateService,
