@@ -23,3 +23,7 @@ func (UUIDGenerator) NewSessionID() shared.SessionID {
 func (UUIDGenerator) NewOneTimeTokenID() shared.OneTimeTokenID {
 	return shared.OneTimeTokenID(uuid.NewString())
 }
+
+func (UUIDGenerator) NewAccountID() shared.AccountID {
+	return shared.AccountID(uuid.NewString())
+}

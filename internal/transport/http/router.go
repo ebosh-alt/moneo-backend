@@ -5,6 +5,7 @@ import "github.com/gin-gonic/gin"
 type RouterOptions struct {
 	AuthMiddleware     gin.HandlerFunc
 	SecurityMiddleware gin.HandlerFunc
+	CatalogHandler     *CatalogHandler
 }
 
 func NewRouter(authHandler *AuthHandler, authMiddleware ...gin.HandlerFunc) *gin.Engine {
@@ -43,11 +44,32 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		protectedAuth.GET("/sessions", authHandler.Sessions)
 		protectedAuth.DELETE("/sessions/:sessionId", authHandler.RevokeSession)
 		protectedAuth.POST("/send-verification-email", authHandler.SendVerificationEmail)
+
+		if options.CatalogHandler != nil {
+			protectedCatalog := router.Group("/", options.AuthMiddleware)
+			protectedCatalog.POST("/accounts", options.CatalogHandler.CreateAccount)
+			protectedCatalog.GET("/accounts", options.CatalogHandler.ListAccounts)
+			protectedCatalog.GET("/accounts/:accountId", options.CatalogHandler.GetAccount)
+			protectedCatalog.GET("/categories", options.CatalogHandler.ListCategories)
+			protectedCatalog.GET("/categories/:categoryId", options.CatalogHandler.GetCategory)
+			protectedCatalog.GET("/subcategories", options.CatalogHandler.ListSubcategories)
+			protectedCatalog.GET("/subcategories/:subcategoryId", options.CatalogHandler.GetSubcategory)
+		}
 	} else {
 		router.GET("/auth/me", authHandler.Me)
 		router.GET("/auth/sessions", authHandler.Sessions)
 		router.DELETE("/auth/sessions/:sessionId", authHandler.RevokeSession)
 		router.POST("/auth/send-verification-email", authHandler.SendVerificationEmail)
+
+		if options.CatalogHandler != nil {
+			router.POST("/accounts", options.CatalogHandler.CreateAccount)
+			router.GET("/accounts", options.CatalogHandler.ListAccounts)
+			router.GET("/accounts/:accountId", options.CatalogHandler.GetAccount)
+			router.GET("/categories", options.CatalogHandler.ListCategories)
+			router.GET("/categories/:categoryId", options.CatalogHandler.GetCategory)
+			router.GET("/subcategories", options.CatalogHandler.ListSubcategories)
+			router.GET("/subcategories/:subcategoryId", options.CatalogHandler.GetSubcategory)
+		}
 	}
 
 	return router

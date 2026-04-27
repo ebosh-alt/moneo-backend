@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	appaccounting "moneo/internal/app/accounting"
+	appcatalog "moneo/internal/app/catalog"
 	appidentity "moneo/internal/app/identity"
 	"moneo/internal/infra/clock"
 	"moneo/internal/infra/idgen"
@@ -113,8 +115,25 @@ func NewAPI(cfg Config) (*API, error) {
 	accessAuthService := appidentity.NewAccessAuthService(tokenService, users, sessions)
 	authMiddleware := transporthttp.NewAuthMiddleware(accessAuthService)
 	authHandler := transporthttp.NewAuthHandler(authFlowService, authPostMVPService)
+	accountRepository := postgres.NewAccountRepository(pool)
+	accountCreateService := appaccounting.NewCreateAccountService(accountRepository, ids, systemClock)
+	accountGetService := appaccounting.NewGetAccountService(accountRepository)
+	accountListService := appaccounting.NewListAccountsService(accountRepository)
+
+	categoryQueryService := appcatalog.NewCategoryQueryService(emptyCategoryRepository{})
+	subcategoryQueryService := appcatalog.NewSubcategoryQueryService(emptySubcategoryRepository{})
+	catalogHandler := transporthttp.NewCatalogHandler(
+		accountCreateService,
+		accountGetService,
+		accountListService,
+		categoryQueryService,
+		categoryQueryService,
+		subcategoryQueryService,
+		subcategoryQueryService,
+	)
 	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
 		AuthMiddleware: authMiddleware,
+		CatalogHandler: catalogHandler,
 	})
 
 	server := &http.Server{
