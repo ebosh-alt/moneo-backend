@@ -113,6 +113,17 @@ func (r *CategoryRepository) ListCategoriesByUserID(
 	})
 }
 
+func (r *CategoryRepository) ListByUserIDWithArchive(
+	ctx context.Context,
+	userID shared.UserID,
+	includeArchived bool,
+) ([]domaincatalog.Category, error) {
+	return r.ListByUserID(ctx, CategoryListInput{
+		UserID:          userID,
+		IncludeArchived: includeArchived,
+	})
+}
+
 func (r *CategoryRepository) ListByUserID(
 	ctx context.Context,
 	input CategoryListInput,
@@ -162,6 +173,97 @@ WHERE user_id = $1
 	}
 
 	return categories, nil
+}
+
+func (r *CategoryRepository) UpdateByID(ctx context.Context, category domaincatalog.Category) error {
+	const query = `
+UPDATE categories
+SET name = $3,
+    type = $4,
+    color = $5,
+    sort_order = $6,
+    updated_at = $7
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(
+		ctx,
+		query,
+		string(category.ID()),
+		string(category.UserID()),
+		category.Name(),
+		string(category.Type()),
+		category.Color(),
+		category.SortOrder(),
+		category.UpdatedAt(),
+	)
+	if err != nil {
+		if isUniqueViolation(err, "ux_categories_user_name_active") {
+			return appcatalog.ErrDuplicateActiveCategoryName
+		}
+
+		return fmt.Errorf("update category by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrCategoryNotFound
+	}
+
+	return nil
+}
+
+func (r *CategoryRepository) ArchiveByID(
+	ctx context.Context,
+	userID shared.UserID,
+	categoryID shared.CategoryID,
+	archivedAt time.Time,
+) error {
+	const query = `
+UPDATE categories
+SET archived_at = $3,
+    updated_at = $3
+WHERE id = $1
+  AND user_id = $2
+  AND archived_at IS NULL
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(categoryID), string(userID), archivedAt)
+	if err != nil {
+		return fmt.Errorf("archive category by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrCategoryNotFound
+	}
+
+	return nil
+}
+
+func (r *CategoryRepository) RestoreByID(
+	ctx context.Context,
+	userID shared.UserID,
+	categoryID shared.CategoryID,
+	updatedAt time.Time,
+) error {
+	const query = `
+UPDATE categories
+SET archived_at = NULL,
+    updated_at = $3
+WHERE id = $1
+  AND user_id = $2
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	commandTag, err := db.Exec(ctx, query, string(categoryID), string(userID), updatedAt)
+	if err != nil {
+		return fmt.Errorf("restore category by id: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return appcatalog.ErrCategoryNotFound
+	}
+
+	return nil
 }
 
 type categoryScanner interface {

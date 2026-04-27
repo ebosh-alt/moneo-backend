@@ -27,3 +27,7 @@ func (UUIDGenerator) NewOneTimeTokenID() shared.OneTimeTokenID {
 func (UUIDGenerator) NewAccountID() shared.AccountID {
 	return shared.AccountID(uuid.NewString())
 }
+
+func (UUIDGenerator) NewCategoryID() shared.CategoryID {
+	return shared.CategoryID(uuid.NewString())
+}

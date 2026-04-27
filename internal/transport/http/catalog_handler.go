@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var categoryColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 type AccountCreateUseCase interface {
 	Create(ctx context.Context, input appaccounting.CreateAccountInput) (domainaccounting.Account, error)
@@ -45,12 +48,28 @@ type AccountUpdateUseCase interface {
 	Update(ctx context.Context, input appaccounting.UpdateAccountInput) (domainaccounting.Account, error)
 }
 
+type CategoryCreateUseCase interface {
+	Create(ctx context.Context, input appcatalog.CreateCategoryInput) (domaincatalog.Category, error)
+}
+
 type CategoryGetUseCase interface {
 	GetByID(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID) (domaincatalog.Category, error)
 }
 
 type CategoryListUseCase interface {
-	ListByUserID(ctx context.Context, userID shared.UserID) ([]domaincatalog.Category, error)
+	ListByUser(ctx context.Context, input appcatalog.ListCategoriesInput) ([]domaincatalog.Category, error)
+}
+
+type CategoryUpdateUseCase interface {
+	Update(ctx context.Context, input appcatalog.UpdateCategoryInput) (domaincatalog.Category, error)
+}
+
+type CategoryArchiveUseCase interface {
+	Archive(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID) (domaincatalog.Category, error)
+}
+
+type CategoryRestoreUseCase interface {
+	Restore(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID) (domaincatalog.Category, error)
 }
 
 type SubcategoryGetUseCase interface {
@@ -69,8 +88,12 @@ type CatalogHandler struct {
 	accountsArchive   AccountArchiveUseCase
 	accountsRestore   AccountRestoreUseCase
 	accountsUpdate    AccountUpdateUseCase
+	categoriesCreate  CategoryCreateUseCase
 	categoriesGet     CategoryGetUseCase
 	categoriesList    CategoryListUseCase
+	categoriesUpdate  CategoryUpdateUseCase
+	categoriesArchive CategoryArchiveUseCase
+	categoriesRestore CategoryRestoreUseCase
 	subcategoriesGet  SubcategoryGetUseCase
 	subcategoriesList SubcategoryListUseCase
 }
@@ -83,8 +106,12 @@ func NewCatalogHandler(
 	accountsArchive AccountArchiveUseCase,
 	accountsRestore AccountRestoreUseCase,
 	accountsUpdate AccountUpdateUseCase,
+	categoriesCreate CategoryCreateUseCase,
 	categoriesGet CategoryGetUseCase,
 	categoriesList CategoryListUseCase,
+	categoriesUpdate CategoryUpdateUseCase,
+	categoriesArchive CategoryArchiveUseCase,
+	categoriesRestore CategoryRestoreUseCase,
 	subcategoriesGet SubcategoryGetUseCase,
 	subcategoriesList SubcategoryListUseCase,
 ) *CatalogHandler {
@@ -96,8 +123,12 @@ func NewCatalogHandler(
 		accountsArchive:   accountsArchive,
 		accountsRestore:   accountsRestore,
 		accountsUpdate:    accountsUpdate,
+		categoriesCreate:  categoriesCreate,
 		categoriesGet:     categoriesGet,
 		categoriesList:    categoriesList,
+		categoriesUpdate:  categoriesUpdate,
+		categoriesArchive: categoriesArchive,
+		categoriesRestore: categoriesRestore,
 		subcategoriesGet:  subcategoriesGet,
 		subcategoriesList: subcategoriesList,
 	}
@@ -121,6 +152,20 @@ type patchAccountRequest struct {
 	Currency       *string        `json:"currency"`
 	InitialBalance *DecimalString `json:"initialBalance"`
 	Balance        *DecimalString `json:"balance"`
+}
+
+type createCategoryRequest struct {
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Color     *string `json:"color"`
+	SortOrder *int    `json:"sortOrder"`
+}
+
+type patchCategoryRequest struct {
+	Name      *string `json:"name"`
+	Type      *string `json:"type"`
+	Color     *string `json:"color"`
+	SortOrder *int    `json:"sortOrder"`
 }
 
 type accountResponse struct {
@@ -158,6 +203,19 @@ type accountSummaryResponse struct {
 }
 
 type categoryResponse struct {
+	ID            string                        `json:"id"`
+	Name          string                        `json:"name"`
+	Type          string                        `json:"type"`
+	Color         *string                       `json:"color"`
+	SortOrder     int                           `json:"sortOrder"`
+	IsArchived    bool                          `json:"isArchived"`
+	ArchivedAt    *time.Time                    `json:"archivedAt"`
+	CreatedAt     time.Time                     `json:"createdAt"`
+	UpdatedAt     time.Time                     `json:"updatedAt"`
+	Subcategories []categorySubcategoryResponse `json:"subcategories"`
+}
+
+type categorySubcategoryResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -570,6 +628,57 @@ func (h *CatalogHandler) GetAccountsSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *CatalogHandler) CreateCategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.categoriesCreate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	var request createCategoryRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "body",
+			Message: "request body is invalid",
+		})
+		return
+	}
+
+	input, details := validateCreateCategoryRequest(user.ID, request)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	category, err := h.categoriesCreate.Create(c.Request.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Category with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "category name must be unique per user",
+			})
+		case errors.Is(err, domaincatalog.ErrInvalidCategoryName),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryType),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryColor):
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "body",
+				Message: "request body is invalid",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	response := toCategoryResponse(category, nil)
+	c.JSON(http.StatusCreated, response)
+}
+
 func (h *CatalogHandler) GetCategory(c *gin.Context) {
 	user, ok := UserFromContext(c)
 	if !ok {
@@ -590,6 +699,19 @@ func (h *CatalogHandler) GetCategory(c *gin.Context) {
 		return
 	}
 
+	includeSubcategories := true
+	if rawIncludeSubcategories := c.Query("includeSubcategories"); rawIncludeSubcategories != "" {
+		parsed, parseErr := strconv.ParseBool(rawIncludeSubcategories)
+		if parseErr != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "includeSubcategories",
+				Message: "includeSubcategories must be a boolean",
+			})
+			return
+		}
+		includeSubcategories = parsed
+	}
+
 	category, err := h.categoriesGet.GetByID(c.Request.Context(), user.ID, shared.CategoryID(categoryID))
 	if err != nil {
 		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
@@ -601,12 +723,150 @@ func (h *CatalogHandler) GetCategory(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, categoryResponse{
-		ID:        string(category.ID()),
-		Name:      category.Name(),
-		CreatedAt: category.CreatedAt(),
-		UpdatedAt: category.UpdatedAt(),
-	})
+	subcategories := make([]domaincatalog.Subcategory, 0)
+	if includeSubcategories {
+		if h.subcategoriesList == nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+
+		allSubcategories, subcategoriesErr := h.subcategoriesList.ListByUserID(c.Request.Context(), user.ID)
+		if subcategoriesErr != nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+
+		subcategories = selectSubcategoriesByCategoryID(allSubcategories, category.ID())
+	}
+
+	c.JSON(http.StatusOK, toCategoryResponse(category, subcategories))
+}
+
+func (h *CatalogHandler) PatchCategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.categoriesUpdate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	categoryID := strings.TrimSpace(c.Param("categoryId"))
+	if categoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "categoryId",
+			Message: "categoryId is required",
+		})
+		return
+	}
+
+	var request patchCategoryRequest
+	if err := decodeStrictJSONBody(c, &request); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "body",
+			Message: "request body is invalid",
+		})
+		return
+	}
+
+	input, details := validatePatchCategoryRequest(user.ID, shared.CategoryID(categoryID), request)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	category, err := h.categoriesUpdate.Update(c.Request.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Category with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "category name must be unique per user",
+			})
+		case errors.Is(err, domaincatalog.ErrInvalidCategoryName),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryType),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryColor):
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "body",
+				Message: "request body is invalid",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, toCategoryResponse(category, nil))
+}
+
+func (h *CatalogHandler) DeleteCategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.categoriesArchive == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	categoryID := strings.TrimSpace(c.Param("categoryId"))
+	if categoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "categoryId",
+			Message: "categoryId is required",
+		})
+		return
+	}
+
+	category, err := h.categoriesArchive.Archive(c.Request.Context(), user.ID, shared.CategoryID(categoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, toCategoryResponse(category, nil))
+}
+
+func (h *CatalogHandler) RestoreCategory(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.categoriesRestore == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	categoryID := strings.TrimSpace(c.Param("categoryId"))
+	if categoryID == "" {
+		writeCatalogValidationError(c, catalogFieldError{
+			Field:   "categoryId",
+			Message: "categoryId is required",
+		})
+		return
+	}
+
+	category, err := h.categoriesRestore.Restore(c.Request.Context(), user.ID, shared.CategoryID(categoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+			return
+		}
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	c.JSON(http.StatusOK, toCategoryResponse(category, nil))
 }
 
 func (h *CatalogHandler) ListCategories(c *gin.Context) {
@@ -626,20 +886,93 @@ func (h *CatalogHandler) ListCategories(c *gin.Context) {
 		return
 	}
 
-	categories, err := h.categoriesList.ListByUserID(c.Request.Context(), user.ID)
+	includeArchived := false
+	if rawIncludeArchived := c.Query("includeArchived"); rawIncludeArchived != "" {
+		parsed, parseErr := strconv.ParseBool(rawIncludeArchived)
+		if parseErr != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "includeArchived",
+				Message: "includeArchived must be a boolean",
+			})
+			return
+		}
+		includeArchived = parsed
+	}
+
+	includeSubcategories := true
+	if rawIncludeSubcategories := c.Query("includeSubcategories"); rawIncludeSubcategories != "" {
+		parsed, parseErr := strconv.ParseBool(rawIncludeSubcategories)
+		if parseErr != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "includeSubcategories",
+				Message: "includeSubcategories must be a boolean",
+			})
+			return
+		}
+		includeSubcategories = parsed
+	}
+
+	var categoryType *domaincatalog.CategoryType
+	if rawType := strings.TrimSpace(c.Query("type")); rawType != "" {
+		parsedType, parseErr := domaincatalog.ParseCategoryType(rawType)
+		if parseErr != nil {
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "type",
+				Message: "type must be one of: required, flexible, saving, investment, debt, income",
+			})
+			return
+		}
+		categoryType = &parsedType
+	}
+
+	sortMode := appcatalog.CategorySortSortOrderAsc
+	if rawSort := strings.TrimSpace(c.Query("sort")); rawSort != "" {
+		switch appcatalog.CategorySort(rawSort) {
+		case appcatalog.CategorySortSortOrderAsc,
+			appcatalog.CategorySortNameAsc,
+			appcatalog.CategorySortCreatedAtDesc:
+			sortMode = appcatalog.CategorySort(rawSort)
+		default:
+			writeCatalogValidationError(c, catalogFieldError{
+				Field:   "sort",
+				Message: "sort must be one of: sortOrder:asc, name:asc, createdAt:desc",
+			})
+			return
+		}
+	}
+
+	categories, err := h.categoriesList.ListByUser(c.Request.Context(), appcatalog.ListCategoriesInput{
+		UserID:          user.ID,
+		IncludeArchived: includeArchived,
+		Type:            categoryType,
+		Sort:            sortMode,
+	})
 	if err != nil {
 		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		return
 	}
 
+	subcategoriesByCategoryID := make(map[shared.CategoryID][]domaincatalog.Subcategory)
+	if includeSubcategories {
+		if h.subcategoriesList == nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+
+		allSubcategories, subcategoriesErr := h.subcategoriesList.ListByUserID(c.Request.Context(), user.ID)
+		if subcategoriesErr != nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+		for _, subcategory := range allSubcategories {
+			categoryID := subcategory.CategoryID()
+			subcategoriesByCategoryID[categoryID] = append(subcategoriesByCategoryID[categoryID], subcategory)
+		}
+	}
+
 	items := make([]categoryResponse, 0, len(categories))
 	for _, category := range categories {
-		items = append(items, categoryResponse{
-			ID:        string(category.ID()),
-			Name:      category.Name(),
-			CreatedAt: category.CreatedAt(),
-			UpdatedAt: category.UpdatedAt(),
-		})
+		items = append(items, toCategoryResponse(category, subcategoriesByCategoryID[category.ID()]))
 	}
 
 	pagedItems, total := paginate(items, limit, offset)
@@ -906,6 +1239,140 @@ func validatePatchAccountRequest(
 	}, nil
 }
 
+func validateCreateCategoryRequest(
+	userID shared.UserID,
+	request createCategoryRequest,
+) (appcatalog.CreateCategoryInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 4)
+
+	trimmedName := strings.TrimSpace(request.Name)
+	if trimmedName == "" {
+		details = append(details, catalogFieldError{
+			Field:   "name",
+			Message: "name is required",
+		})
+	} else if len([]rune(trimmedName)) > 100 {
+		details = append(details, catalogFieldError{
+			Field:   "name",
+			Message: "name must be between 1 and 100 characters",
+		})
+	}
+
+	var categoryType domaincatalog.CategoryType
+	trimmedType := strings.TrimSpace(request.Type)
+	if trimmedType == "" {
+		details = append(details, catalogFieldError{
+			Field:   "type",
+			Message: "type is required",
+		})
+	} else {
+		parsedType, err := domaincatalog.ParseCategoryType(trimmedType)
+		if err != nil {
+			details = append(details, catalogFieldError{
+				Field:   "type",
+				Message: "type must be one of: required, flexible, saving, investment, debt, income",
+			})
+		} else {
+			categoryType = parsedType
+		}
+	}
+
+	var color *string
+	if request.Color != nil {
+		trimmedColor := strings.TrimSpace(*request.Color)
+		if trimmedColor == "" || !categoryColorPattern.MatchString(trimmedColor) {
+			details = append(details, catalogFieldError{
+				Field:   "color",
+				Message: "color must be a valid HEX string #RRGGBB",
+			})
+		} else {
+			color = &trimmedColor
+		}
+	}
+
+	if len(details) > 0 {
+		return appcatalog.CreateCategoryInput{}, details
+	}
+
+	input := appcatalog.CreateCategoryInput{
+		UserID: userID,
+		Name:   trimmedName,
+		Type:   categoryType,
+		Color:  color,
+	}
+	if request.SortOrder != nil {
+		input.SortOrder = request.SortOrder
+	}
+	return input, nil
+}
+
+func validatePatchCategoryRequest(
+	userID shared.UserID,
+	categoryID shared.CategoryID,
+	request patchCategoryRequest,
+) (appcatalog.UpdateCategoryInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 4)
+
+	if request.Name == nil && request.Type == nil && request.Color == nil && request.SortOrder == nil {
+		details = append(details, catalogFieldError{
+			Field:   "body",
+			Message: "at least one mutable field is required",
+		})
+	}
+
+	var name *string
+	if request.Name != nil {
+		trimmedName := strings.TrimSpace(*request.Name)
+		if trimmedName == "" || len([]rune(trimmedName)) > 100 {
+			details = append(details, catalogFieldError{
+				Field:   "name",
+				Message: "name must be between 1 and 100 characters",
+			})
+		} else {
+			name = &trimmedName
+		}
+	}
+
+	var categoryType *domaincatalog.CategoryType
+	if request.Type != nil {
+		parsedType, err := domaincatalog.ParseCategoryType(strings.TrimSpace(*request.Type))
+		if err != nil {
+			details = append(details, catalogFieldError{
+				Field:   "type",
+				Message: "type must be one of: required, flexible, saving, investment, debt, income",
+			})
+		} else {
+			categoryType = &parsedType
+		}
+	}
+
+	var color *string
+	if request.Color != nil {
+		trimmedColor := strings.TrimSpace(*request.Color)
+		if trimmedColor == "" || !categoryColorPattern.MatchString(trimmedColor) {
+			details = append(details, catalogFieldError{
+				Field:   "color",
+				Message: "color must be a valid HEX string #RRGGBB",
+			})
+		} else {
+			color = &trimmedColor
+		}
+	}
+
+	if len(details) > 0 {
+		return appcatalog.UpdateCategoryInput{}, details
+	}
+
+	return appcatalog.UpdateCategoryInput{
+		UserID:     userID,
+		CategoryID: categoryID,
+		Name:       name,
+		Type:       categoryType,
+		Color:      color,
+		SortOrder:  request.SortOrder,
+	}, nil
+}
+
 func toAccountResponse(account domainaccounting.Account) (accountResponse, error) {
 	balance, err := FormatMoneyToREST(account.Balance())
 	if err != nil {
@@ -930,6 +1397,47 @@ func toAccountResponse(account domainaccounting.Account) (accountResponse, error
 		CreatedAt:            account.CreatedAt(),
 		UpdatedAt:            account.UpdatedAt(),
 	}, nil
+}
+
+func toCategoryResponse(
+	category domaincatalog.Category,
+	subcategories []domaincatalog.Subcategory,
+) categoryResponse {
+	items := make([]categorySubcategoryResponse, 0, len(subcategories))
+	for _, subcategory := range subcategories {
+		items = append(items, categorySubcategoryResponse{
+			ID:        string(subcategory.ID()),
+			Name:      subcategory.Name(),
+			CreatedAt: subcategory.CreatedAt(),
+			UpdatedAt: subcategory.UpdatedAt(),
+		})
+	}
+
+	return categoryResponse{
+		ID:            string(category.ID()),
+		Name:          category.Name(),
+		Type:          string(category.Type()),
+		Color:         category.Color(),
+		SortOrder:     category.SortOrder(),
+		IsArchived:    category.ArchivedAt() != nil,
+		ArchivedAt:    category.ArchivedAt(),
+		CreatedAt:     category.CreatedAt(),
+		UpdatedAt:     category.UpdatedAt(),
+		Subcategories: items,
+	}
+}
+
+func selectSubcategoriesByCategoryID(
+	subcategories []domaincatalog.Subcategory,
+	categoryID shared.CategoryID,
+) []domaincatalog.Subcategory {
+	result := make([]domaincatalog.Subcategory, 0, 4)
+	for _, subcategory := range subcategories {
+		if subcategory.CategoryID() == categoryID {
+			result = append(result, subcategory)
+		}
+	}
+	return result
 }
 
 func toAccountSummaryResponse(summary appaccounting.AccountSummary) (accountSummaryResponse, error) {

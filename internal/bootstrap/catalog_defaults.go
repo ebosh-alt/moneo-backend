@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"time"
 
 	appcatalog "moneo/internal/app/catalog"
 	domaincatalog "moneo/internal/domain/catalog"
@@ -40,4 +41,22 @@ func (emptySubcategoryRepository) ListSubcategoriesByUserID(
 	_ shared.UserID,
 ) ([]domaincatalog.Subcategory, error) {
 	return []domaincatalog.Subcategory{}, nil
+}
+
+func (emptySubcategoryRepository) ArchiveByCategoryID(
+	_ context.Context,
+	_ shared.UserID,
+	_ shared.CategoryID,
+	_ time.Time,
+) error {
+	return nil
+}
+
+func (emptySubcategoryRepository) RestoreByCategoryID(
+	_ context.Context,
+	_ shared.UserID,
+	_ shared.CategoryID,
+	_ time.Time,
+) error {
+	return nil
 }
