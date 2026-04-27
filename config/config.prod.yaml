@@ -1,0 +1,17 @@
+Postgres:
+  host: db
+  port: "5432"
+  user: postgres
+  password: postgres
+  DBName: accounts
+  sslMode: disable
+  pgDriver: postgres
+
+Server:
+  host: "0.0.0.0"
+  port: "8080"
+  tls:
+    enabled: false
+
+Cache:
+  ttlSeconds: 60

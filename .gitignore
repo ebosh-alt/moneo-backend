@@ -2,3 +2,6 @@
 *.env
 *.log
 AGENTS.md
+config/config.prod.yaml
+config/config.dev.yaml
+config/config.local.yaml
