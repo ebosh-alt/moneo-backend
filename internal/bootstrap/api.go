@@ -130,36 +130,36 @@ func NewAPI(cfg Config) (*API, error) {
 	categoryQueryService := appcatalog.NewCategoryQueryService(categoryRepository)
 	categoryListService := appcatalog.NewListCategoriesService(categoryRepository)
 	categoryUpdateService := appcatalog.NewUpdateCategoryService(categoryRepository, systemClock)
-	categoryArchiveService := appcatalog.NewArchiveCategoryService(categoryRepository, subcategoryRepository, systemClock)
-	categoryRestoreService := appcatalog.NewRestoreCategoryService(categoryRepository, subcategoryRepository, systemClock)
+	categoryArchiveService := appcatalog.NewArchiveCategoryService(categoryRepository, subcategoryRepository, txManager, systemClock)
+	categoryRestoreService := appcatalog.NewRestoreCategoryService(categoryRepository, subcategoryRepository, txManager, systemClock)
 	subcategoryCreateService := appcatalog.NewCreateSubcategoryService(subcategoryRepository, categoryRepository, ids, systemClock)
 	subcategoryListByCategoryService := appcatalog.NewListSubcategoriesByCategoryService(subcategoryRepository, categoryRepository)
 	subcategoryUpdateService := appcatalog.NewUpdateSubcategoryService(subcategoryRepository, systemClock)
 	subcategoryArchiveService := appcatalog.NewArchiveSubcategoryService(subcategoryRepository, systemClock)
 	subcategoryRestoreService := appcatalog.NewRestoreSubcategoryService(subcategoryRepository, categoryRepository, systemClock)
 	subcategoryQueryService := appcatalog.NewSubcategoryQueryService(subcategoryRepository)
-	catalogHandler := transporthttp.NewCatalogHandler(
-		accountCreateService,
-		accountGetService,
-		accountListService,
-		accountSummaryService,
-		accountArchiveService,
-		accountRestoreService,
-		accountUpdateService,
-		categoryCreateService,
-		categoryQueryService,
-		categoryListService,
-		categoryUpdateService,
-		categoryArchiveService,
-		categoryRestoreService,
-		subcategoryCreateService,
-		subcategoryListByCategoryService,
-		subcategoryUpdateService,
-		subcategoryArchiveService,
-		subcategoryRestoreService,
-		subcategoryQueryService,
-		subcategoryQueryService,
-	)
+	catalogHandler := transporthttp.NewCatalogHandler(transporthttp.CatalogHandlerDeps{
+		AccountsCreate:              accountCreateService,
+		AccountsGet:                 accountGetService,
+		AccountsList:                accountListService,
+		AccountsSummary:             accountSummaryService,
+		AccountsArchive:             accountArchiveService,
+		AccountsRestore:             accountRestoreService,
+		AccountsUpdate:              accountUpdateService,
+		CategoriesCreate:            categoryCreateService,
+		CategoriesGet:               categoryQueryService,
+		CategoriesList:              categoryListService,
+		CategoriesUpdate:            categoryUpdateService,
+		CategoriesArchive:           categoryArchiveService,
+		CategoriesRestore:           categoryRestoreService,
+		SubcategoriesCreate:         subcategoryCreateService,
+		SubcategoriesListByCategory: subcategoryListByCategoryService,
+		SubcategoriesUpdate:         subcategoryUpdateService,
+		SubcategoriesArchive:        subcategoryArchiveService,
+		SubcategoriesRestore:        subcategoryRestoreService,
+		SubcategoriesGet:            subcategoryQueryService,
+		SubcategoriesList:           subcategoryQueryService,
+	})
 	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
 		AuthMiddleware: authMiddleware,
 		CatalogHandler: catalogHandler,

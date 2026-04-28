@@ -181,6 +181,9 @@ WHERE id = $1
 	db := databaseFromContext(ctx, r.pool)
 	commandTag, err := db.Exec(ctx, query, string(accountID), string(userID), updatedAt)
 	if err != nil {
+		if isUniqueViolation(err, "ux_accounts_user_name_active") {
+			return appaccounting.ErrDuplicateActiveAccountName
+		}
 		return fmt.Errorf("restore account by id: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
@@ -190,7 +193,11 @@ WHERE id = $1
 	return nil
 }
 
-func (r *AccountRepository) UpdateByID(ctx context.Context, account domainaccounting.Account) error {
+func (r *AccountRepository) UpdateByID(
+	ctx context.Context,
+	account domainaccounting.Account,
+	expectedUpdatedAt time.Time,
+) error {
 	const query = `
 UPDATE accounts
 SET name = $3,
@@ -200,6 +207,7 @@ SET name = $3,
     updated_at = $7
 WHERE id = $1
   AND user_id = $2
+  AND updated_at = $8
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -213,6 +221,7 @@ WHERE id = $1
 		account.IncludeInNetWorth(),
 		account.IncludeInDailyBudget(),
 		account.UpdatedAt(),
+		expectedUpdatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err, "ux_accounts_user_name_active") {
@@ -222,10 +231,42 @@ WHERE id = $1
 		return fmt.Errorf("update account by id: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
+		exists, resolveErr := r.existsByID(ctx, account.UserID(), account.ID())
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if exists {
+			return appaccounting.ErrConcurrentAccountUpdate
+		}
 		return appaccounting.ErrAccountNotFound
 	}
 
 	return nil
+}
+
+func (r *AccountRepository) existsByID(
+	ctx context.Context,
+	userID shared.UserID,
+	accountID shared.AccountID,
+) (bool, error) {
+	const query = `
+SELECT 1
+FROM accounts
+WHERE id = $1
+  AND user_id = $2
+LIMIT 1
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	var marker int
+	if err := db.QueryRow(ctx, query, string(accountID), string(userID)).Scan(&marker); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("resolve account existence: %w", err)
+	}
+
+	return true, nil
 }
 
 type accountScanner interface {

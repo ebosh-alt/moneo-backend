@@ -175,7 +175,11 @@ WHERE user_id = $1
 	return categories, nil
 }
 
-func (r *CategoryRepository) UpdateByID(ctx context.Context, category domaincatalog.Category) error {
+func (r *CategoryRepository) UpdateByID(
+	ctx context.Context,
+	category domaincatalog.Category,
+	expectedUpdatedAt time.Time,
+) error {
 	const query = `
 UPDATE categories
 SET name = $3,
@@ -185,6 +189,7 @@ SET name = $3,
     updated_at = $7
 WHERE id = $1
   AND user_id = $2
+  AND updated_at = $8
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -198,6 +203,7 @@ WHERE id = $1
 		category.Color(),
 		category.SortOrder(),
 		category.UpdatedAt(),
+		expectedUpdatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err, "ux_categories_user_name_active") {
@@ -207,10 +213,42 @@ WHERE id = $1
 		return fmt.Errorf("update category by id: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
+		exists, resolveErr := r.existsByID(ctx, category.UserID(), category.ID())
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if exists {
+			return appcatalog.ErrConcurrentCategoryUpdate
+		}
 		return appcatalog.ErrCategoryNotFound
 	}
 
 	return nil
+}
+
+func (r *CategoryRepository) existsByID(
+	ctx context.Context,
+	userID shared.UserID,
+	categoryID shared.CategoryID,
+) (bool, error) {
+	const query = `
+SELECT 1
+FROM categories
+WHERE id = $1
+  AND user_id = $2
+LIMIT 1
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	var marker int
+	if err := db.QueryRow(ctx, query, string(categoryID), string(userID)).Scan(&marker); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("resolve category existence: %w", err)
+	}
+
+	return true, nil
 }
 
 func (r *CategoryRepository) ArchiveByID(
@@ -257,6 +295,9 @@ WHERE id = $1
 	db := databaseFromContext(ctx, r.pool)
 	commandTag, err := db.Exec(ctx, query, string(categoryID), string(userID), updatedAt)
 	if err != nil {
+		if isUniqueViolation(err, "ux_categories_user_name_active") {
+			return appcatalog.ErrDuplicateActiveCategoryName
+		}
 		return fmt.Errorf("restore category by id: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {

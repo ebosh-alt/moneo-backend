@@ -123,49 +123,51 @@ type CatalogHandler struct {
 	subcategoriesList           SubcategoryListUseCase
 }
 
-func NewCatalogHandler(
-	accountsCreate AccountCreateUseCase,
-	accountsGet AccountGetUseCase,
-	accountsList AccountListUseCase,
-	accountsSummary AccountSummaryUseCase,
-	accountsArchive AccountArchiveUseCase,
-	accountsRestore AccountRestoreUseCase,
-	accountsUpdate AccountUpdateUseCase,
-	categoriesCreate CategoryCreateUseCase,
-	categoriesGet CategoryGetUseCase,
-	categoriesList CategoryListUseCase,
-	categoriesUpdate CategoryUpdateUseCase,
-	categoriesArchive CategoryArchiveUseCase,
-	categoriesRestore CategoryRestoreUseCase,
-	subcategoriesCreate SubcategoryCreateUseCase,
-	subcategoriesListByCategory SubcategoryListByCategoryUseCase,
-	subcategoriesUpdate SubcategoryUpdateUseCase,
-	subcategoriesArchive SubcategoryArchiveUseCase,
-	subcategoriesRestore SubcategoryRestoreUseCase,
-	subcategoriesGet SubcategoryGetUseCase,
-	subcategoriesList SubcategoryListUseCase,
-) *CatalogHandler {
+type CatalogHandlerDeps struct {
+	AccountsCreate              AccountCreateUseCase
+	AccountsGet                 AccountGetUseCase
+	AccountsList                AccountListUseCase
+	AccountsSummary             AccountSummaryUseCase
+	AccountsArchive             AccountArchiveUseCase
+	AccountsRestore             AccountRestoreUseCase
+	AccountsUpdate              AccountUpdateUseCase
+	CategoriesCreate            CategoryCreateUseCase
+	CategoriesGet               CategoryGetUseCase
+	CategoriesList              CategoryListUseCase
+	CategoriesUpdate            CategoryUpdateUseCase
+	CategoriesArchive           CategoryArchiveUseCase
+	CategoriesRestore           CategoryRestoreUseCase
+	SubcategoriesCreate         SubcategoryCreateUseCase
+	SubcategoriesListByCategory SubcategoryListByCategoryUseCase
+	SubcategoriesUpdate         SubcategoryUpdateUseCase
+	SubcategoriesArchive        SubcategoryArchiveUseCase
+	SubcategoriesRestore        SubcategoryRestoreUseCase
+	SubcategoriesGet            SubcategoryGetUseCase
+	SubcategoriesList           SubcategoryListUseCase
+}
+
+func NewCatalogHandler(deps CatalogHandlerDeps) *CatalogHandler {
 	return &CatalogHandler{
-		accountsCreate:              accountsCreate,
-		accountsGet:                 accountsGet,
-		accountsList:                accountsList,
-		accountsSummary:             accountsSummary,
-		accountsArchive:             accountsArchive,
-		accountsRestore:             accountsRestore,
-		accountsUpdate:              accountsUpdate,
-		categoriesCreate:            categoriesCreate,
-		categoriesGet:               categoriesGet,
-		categoriesList:              categoriesList,
-		categoriesUpdate:            categoriesUpdate,
-		categoriesArchive:           categoriesArchive,
-		categoriesRestore:           categoriesRestore,
-		subcategoriesCreate:         subcategoriesCreate,
-		subcategoriesListByCategory: subcategoriesListByCategory,
-		subcategoriesUpdate:         subcategoriesUpdate,
-		subcategoriesArchive:        subcategoriesArchive,
-		subcategoriesRestore:        subcategoriesRestore,
-		subcategoriesGet:            subcategoriesGet,
-		subcategoriesList:           subcategoriesList,
+		accountsCreate:              deps.AccountsCreate,
+		accountsGet:                 deps.AccountsGet,
+		accountsList:                deps.AccountsList,
+		accountsSummary:             deps.AccountsSummary,
+		accountsArchive:             deps.AccountsArchive,
+		accountsRestore:             deps.AccountsRestore,
+		accountsUpdate:              deps.AccountsUpdate,
+		categoriesCreate:            deps.CategoriesCreate,
+		categoriesGet:               deps.CategoriesGet,
+		categoriesList:              deps.CategoriesList,
+		categoriesUpdate:            deps.CategoriesUpdate,
+		categoriesArchive:           deps.CategoriesArchive,
+		categoriesRestore:           deps.CategoriesRestore,
+		subcategoriesCreate:         deps.SubcategoriesCreate,
+		subcategoriesListByCategory: deps.SubcategoriesListByCategory,
+		subcategoriesUpdate:         deps.SubcategoriesUpdate,
+		subcategoriesArchive:        deps.SubcategoriesArchive,
+		subcategoriesRestore:        deps.SubcategoriesRestore,
+		subcategoriesGet:            deps.SubcategoriesGet,
+		subcategoriesList:           deps.SubcategoriesList,
 	}
 }
 
@@ -248,23 +250,16 @@ type accountSummaryResponse struct {
 }
 
 type categoryResponse struct {
-	ID            string                        `json:"id"`
-	Name          string                        `json:"name"`
-	Type          string                        `json:"type"`
-	Color         *string                       `json:"color"`
-	SortOrder     int                           `json:"sortOrder"`
-	IsArchived    bool                          `json:"isArchived"`
-	ArchivedAt    *time.Time                    `json:"archivedAt"`
-	CreatedAt     time.Time                     `json:"createdAt"`
-	UpdatedAt     time.Time                     `json:"updatedAt"`
-	Subcategories []categorySubcategoryResponse `json:"subcategories"`
-}
-
-type categorySubcategoryResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID            string                `json:"id"`
+	Name          string                `json:"name"`
+	Type          string                `json:"type"`
+	Color         *string               `json:"color"`
+	SortOrder     int                   `json:"sortOrder"`
+	IsArchived    bool                  `json:"isArchived"`
+	ArchivedAt    *time.Time            `json:"archivedAt"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	UpdatedAt     time.Time             `json:"updatedAt"`
+	Subcategories []subcategoryResponse `json:"subcategories"`
 }
 
 type subcategoryResponse struct {
@@ -429,6 +424,11 @@ func (h *CatalogHandler) PatchAccount(c *gin.Context) {
 				Field:   "name",
 				Message: "account with this name already exists",
 			})
+		case errors.Is(err, appaccounting.ErrConcurrentAccountUpdate):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Conflict", catalogFieldError{
+				Field:   "body",
+				Message: "account was modified concurrently, retry with fresh state",
+			})
 		default:
 			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		}
@@ -506,12 +506,17 @@ func (h *CatalogHandler) RestoreAccount(c *gin.Context) {
 
 	account, err := h.accountsRestore.Restore(c.Request.Context(), user.ID, shared.AccountID(accountID))
 	if err != nil {
-		if errors.Is(err, appaccounting.ErrAccountNotFound) {
+		switch {
+		case errors.Is(err, appaccounting.ErrAccountNotFound):
 			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
-			return
+		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Account with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "account name must be unique per user",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		}
-
-		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		return
 	}
 
@@ -773,18 +778,24 @@ func (h *CatalogHandler) GetCategory(c *gin.Context) {
 
 	subcategories := make([]domaincatalog.Subcategory, 0)
 	if includeSubcategories {
-		if h.subcategoriesList == nil {
+		if h.subcategoriesListByCategory == nil {
 			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 			return
 		}
 
-		allSubcategories, subcategoriesErr := h.subcategoriesList.ListByUserID(c.Request.Context(), user.ID)
+		listedSubcategories, subcategoriesErr := h.subcategoriesListByCategory.List(
+			c.Request.Context(),
+			appcatalog.ListSubcategoriesByCategoryInput{
+				UserID:          user.ID,
+				CategoryID:      category.ID(),
+				IncludeArchived: false,
+			},
+		)
 		if subcategoriesErr != nil {
 			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 			return
 		}
-
-		subcategories = selectSubcategoriesByCategoryID(allSubcategories, category.ID())
+		subcategories = listedSubcategories
 	}
 
 	c.JSON(http.StatusOK, toCategoryResponse(category, subcategories))
@@ -834,6 +845,11 @@ func (h *CatalogHandler) PatchCategory(c *gin.Context) {
 			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Category with this name already exists", catalogFieldError{
 				Field:   "name",
 				Message: "category name must be unique per user",
+			})
+		case errors.Is(err, appcatalog.ErrConcurrentCategoryUpdate):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Conflict", catalogFieldError{
+				Field:   "body",
+				Message: "category was modified concurrently, retry with fresh state",
 			})
 		case errors.Is(err, domaincatalog.ErrInvalidCategoryName),
 			errors.Is(err, domaincatalog.ErrInvalidCategoryType),
@@ -906,11 +922,17 @@ func (h *CatalogHandler) RestoreCategory(c *gin.Context) {
 
 	category, err := h.categoriesRestore.Restore(c.Request.Context(), user.ID, shared.CategoryID(categoryID))
 	if err != nil {
-		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
 			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
-			return
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Category with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "category name must be unique per user",
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		}
-		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		return
 	}
 
@@ -1000,32 +1022,46 @@ func (h *CatalogHandler) ListCategories(c *gin.Context) {
 		return
 	}
 
-	subcategoriesByCategoryID := make(map[shared.CategoryID][]domaincatalog.Subcategory)
-	if includeSubcategories {
-		if h.subcategoriesList == nil {
-			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
-			return
+	pagedCategories, total := paginate(categories, limit, offset)
+	items := make([]categoryResponse, 0, len(pagedCategories))
+	if !includeSubcategories {
+		for _, category := range pagedCategories {
+			items = append(items, toCategoryResponse(category, nil))
 		}
+		c.JSON(http.StatusOK, paginatedResponse[categoryResponse]{
+			Items: items,
+			Pagination: paginationMeta{
+				Limit:  limit,
+				Offset: offset,
+				Total:  total,
+			},
+		})
+		return
+	}
 
-		allSubcategories, subcategoriesErr := h.subcategoriesList.ListByUserID(c.Request.Context(), user.ID)
+	if h.subcategoriesListByCategory == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	for _, category := range pagedCategories {
+		subcategories, subcategoriesErr := h.subcategoriesListByCategory.List(
+			c.Request.Context(),
+			appcatalog.ListSubcategoriesByCategoryInput{
+				UserID:          user.ID,
+				CategoryID:      category.ID(),
+				IncludeArchived: false,
+			},
+		)
 		if subcategoriesErr != nil {
 			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 			return
 		}
-		for _, subcategory := range allSubcategories {
-			categoryID := subcategory.CategoryID()
-			subcategoriesByCategoryID[categoryID] = append(subcategoriesByCategoryID[categoryID], subcategory)
-		}
+		items = append(items, toCategoryResponse(category, subcategories))
 	}
 
-	items := make([]categoryResponse, 0, len(categories))
-	for _, category := range categories {
-		items = append(items, toCategoryResponse(category, subcategoriesByCategoryID[category.ID()]))
-	}
-
-	pagedItems, total := paginate(items, limit, offset)
 	c.JSON(http.StatusOK, paginatedResponse[categoryResponse]{
-		Items: pagedItems,
+		Items: items,
 		Pagination: paginationMeta{
 			Limit:  limit,
 			Offset: offset,
@@ -1212,6 +1248,11 @@ func (h *CatalogHandler) PatchSubcategory(c *gin.Context) {
 				Field:   "name",
 				Message: "subcategory name must be unique per category",
 			})
+		case errors.Is(err, appcatalog.ErrConcurrentSubcategoryUpdate):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Conflict", catalogFieldError{
+				Field:   "body",
+				Message: "subcategory was modified concurrently, retry with fresh state",
+			})
 		case errors.Is(err, domaincatalog.ErrInvalidSubcategoryName):
 			writeCatalogValidationError(c, catalogFieldError{
 				Field:   "name",
@@ -1284,6 +1325,11 @@ func (h *CatalogHandler) RestoreSubcategory(c *gin.Context) {
 		switch {
 		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
 			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found")
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Subcategory with this name already exists", catalogFieldError{
+				Field:   "name",
+				Message: "subcategory name must be unique per category",
+			})
 		case errors.Is(err, appcatalog.ErrParentCategoryArchived):
 			writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{
 				Field:   "categoryId",
@@ -1774,14 +1820,9 @@ func toCategoryResponse(
 	category domaincatalog.Category,
 	subcategories []domaincatalog.Subcategory,
 ) categoryResponse {
-	items := make([]categorySubcategoryResponse, 0, len(subcategories))
+	items := make([]subcategoryResponse, 0, len(subcategories))
 	for _, subcategory := range subcategories {
-		items = append(items, categorySubcategoryResponse{
-			ID:        string(subcategory.ID()),
-			Name:      subcategory.Name(),
-			CreatedAt: subcategory.CreatedAt(),
-			UpdatedAt: subcategory.UpdatedAt(),
-		})
+		items = append(items, toSubcategoryResponse(subcategory))
 	}
 
 	return categoryResponse{
@@ -1809,19 +1850,6 @@ func toSubcategoryResponse(subcategory domaincatalog.Subcategory) subcategoryRes
 		CreatedAt:  subcategory.CreatedAt(),
 		UpdatedAt:  subcategory.UpdatedAt(),
 	}
-}
-
-func selectSubcategoriesByCategoryID(
-	subcategories []domaincatalog.Subcategory,
-	categoryID shared.CategoryID,
-) []domaincatalog.Subcategory {
-	result := make([]domaincatalog.Subcategory, 0, 4)
-	for _, subcategory := range subcategories {
-		if subcategory.CategoryID() == categoryID {
-			result = append(result, subcategory)
-		}
-	}
-	return result
 }
 
 func toAccountSummaryResponse(summary appaccounting.AccountSummary) (accountSummaryResponse, error) {

@@ -168,6 +168,94 @@ func TestAccountRepositoryRestoreByIDClearsArchivedAt(t *testing.T) {
 	}
 }
 
+func TestAccountRepositoryRestoreByIDMapsUniqueConflict(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	repo := NewAccountRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "restore-conflict@example.com")
+
+	active := newAccountFixture(t, userID, "Main card", domainaccounting.AccountTypeDebitCard, 100_00, nil)
+	if err := repo.Create(ctx, active); err != nil {
+		t.Fatalf("create active account: %v", err)
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	archived := newAccountFixture(t, userID, "main card", domainaccounting.AccountTypeCash, 50_00, &archivedAt)
+	if err := repo.Create(ctx, archived); err != nil {
+		t.Fatalf("create archived account with duplicate name: %v", err)
+	}
+
+	err := repo.RestoreByID(ctx, userID, archived.ID(), time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+	if !errors.Is(err, appaccounting.ErrDuplicateActiveAccountName) {
+		t.Fatalf("expected ErrDuplicateActiveAccountName on restore conflict, got %v", err)
+	}
+}
+
+func TestAccountRepositoryUpdateByIDDetectsConcurrentUpdate(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	repo := NewAccountRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "update-concurrent-account@example.com")
+
+	account := newAccountFixture(t, userID, "Main card", domainaccounting.AccountTypeDebitCard, 100_00, nil)
+	if err := repo.Create(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	current, err := repo.FindByID(ctx, userID, account.ID())
+	if err != nil {
+		t.Fatalf("find account: %v", err)
+	}
+
+	firstUpdateAt := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	firstUpdated, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
+		ID:                   current.ID(),
+		UserID:               current.UserID(),
+		Name:                 "Primary card",
+		Type:                 current.Type(),
+		Balance:              current.Balance(),
+		InitialBalance:       current.InitialBalance(),
+		IncludeInNetWorth:    current.IncludeInNetWorth(),
+		IncludeInDailyBudget: current.IncludeInDailyBudget(),
+		ArchivedAt:           current.ArchivedAt(),
+		CreatedAt:            current.CreatedAt(),
+		UpdatedAt:            firstUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build first updated account: %v", err)
+	}
+	if err := repo.UpdateByID(ctx, firstUpdated, current.UpdatedAt()); err != nil {
+		t.Fatalf("first update account: %v", err)
+	}
+
+	staleUpdateAt := firstUpdateAt.Add(time.Second)
+	staleUpdated, err := domainaccounting.NewAccount(domainaccounting.NewAccountParams{
+		ID:                   current.ID(),
+		UserID:               current.UserID(),
+		Name:                 "Wallet",
+		Type:                 current.Type(),
+		Balance:              current.Balance(),
+		InitialBalance:       current.InitialBalance(),
+		IncludeInNetWorth:    current.IncludeInNetWorth(),
+		IncludeInDailyBudget: current.IncludeInDailyBudget(),
+		ArchivedAt:           current.ArchivedAt(),
+		CreatedAt:            current.CreatedAt(),
+		UpdatedAt:            staleUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build stale updated account: %v", err)
+	}
+
+	err = repo.UpdateByID(ctx, staleUpdated, current.UpdatedAt())
+	if !errors.Is(err, appaccounting.ErrConcurrentAccountUpdate) {
+		t.Fatalf("expected ErrConcurrentAccountUpdate, got %v", err)
+	}
+}
+
 func openPostgresForAccountRepoTests(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 

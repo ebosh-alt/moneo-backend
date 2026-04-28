@@ -256,6 +256,272 @@ func TestSubcategoryRepositoryChecksParentCategoryOwnershipForCreateAndList(t *t
 	}
 }
 
+func TestSubcategoryRepositoryCreateRejectsArchivedParentCategory(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewSubcategoryRepository(pool)
+	ctx := context.Background()
+
+	userID := insertAccountTestUser(t, pool, "subcat-archived-parent-create@example.com")
+	archivedAt := time.Date(2026, 4, 28, 16, 0, 0, 0, time.UTC)
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID:     userID,
+		Name:       "Food",
+		Type:       domaincatalog.CategoryTypeRequired,
+		ArchivedAt: &archivedAt,
+		CreatedAt:  archivedAt.Add(-2 * time.Hour),
+		UpdatedAt:  archivedAt,
+	})
+	if err := categoryRepo.Create(ctx, category); err != nil {
+		t.Fatalf("create archived category: %v", err)
+	}
+
+	subcategory := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Groceries",
+	})
+	err := repo.Create(ctx, subcategory)
+	if !errors.Is(err, appcatalog.ErrParentCategoryArchived) {
+		t.Fatalf("expected ErrParentCategoryArchived, got %v", err)
+	}
+}
+
+func TestSubcategoryRepositoryRestoreByIDRejectsArchivedParentCategory(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewSubcategoryRepository(pool)
+	ctx := context.Background()
+
+	userID := insertAccountTestUser(t, pool, "subcat-archived-parent-restore@example.com")
+	archivedAt := time.Date(2026, 4, 28, 17, 0, 0, 0, time.UTC)
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID:     userID,
+		Name:       "Food",
+		Type:       domaincatalog.CategoryTypeRequired,
+		ArchivedAt: &archivedAt,
+		CreatedAt:  archivedAt.Add(-2 * time.Hour),
+		UpdatedAt:  archivedAt,
+	})
+	if err := categoryRepo.Create(ctx, category); err != nil {
+		t.Fatalf("create archived category: %v", err)
+	}
+
+	subcategoryArchivedAt := archivedAt.Add(-time.Hour)
+	subcategory := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Groceries",
+		ArchivedAt: &subcategoryArchivedAt,
+		CreatedAt:  subcategoryArchivedAt.Add(-time.Hour),
+		UpdatedAt:  subcategoryArchivedAt,
+	})
+	if err := repo.Create(ctx, subcategory); err != nil {
+		t.Fatalf("create archived subcategory: %v", err)
+	}
+
+	restoreAt := time.Date(2026, 4, 28, 18, 0, 0, 0, time.UTC)
+	err := repo.RestoreByID(ctx, userID, subcategory.ID(), restoreAt)
+	if !errors.Is(err, appcatalog.ErrParentCategoryArchived) {
+		t.Fatalf("expected ErrParentCategoryArchived on restore, got %v", err)
+	}
+}
+
+func TestSubcategoryRepositoryRestoreByCategoryIDRestoresOnlyCascadeArchivedRows(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewSubcategoryRepository(pool)
+	ctx := context.Background()
+
+	userID := insertAccountTestUser(t, pool, "subcat-selective-restore@example.com")
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID: userID,
+		Name:   "Food",
+		Type:   domaincatalog.CategoryTypeRequired,
+	})
+	if err := categoryRepo.Create(ctx, category); err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+
+	active := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Groceries",
+	})
+	if err := repo.Create(ctx, active); err != nil {
+		t.Fatalf("create active subcategory: %v", err)
+	}
+
+	manualArchivedAt := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	manuallyArchived := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Restaurants",
+		ArchivedAt: &manualArchivedAt,
+		CreatedAt:  manualArchivedAt.Add(-time.Hour),
+		UpdatedAt:  manualArchivedAt,
+	})
+	if err := repo.Create(ctx, manuallyArchived); err != nil {
+		t.Fatalf("create manually archived subcategory: %v", err)
+	}
+
+	cascadeArchivedAt := time.Date(2026, 4, 28, 14, 0, 0, 0, time.UTC)
+	if err := repo.ArchiveByCategoryID(ctx, userID, category.ID(), cascadeArchivedAt); err != nil {
+		t.Fatalf("cascade archive subcategories: %v", err)
+	}
+
+	restoreAt := time.Date(2026, 4, 28, 15, 0, 0, 0, time.UTC)
+	if err := repo.RestoreByCategoryID(ctx, userID, category.ID(), restoreAt, cascadeArchivedAt); err != nil {
+		t.Fatalf("cascade restore subcategories: %v", err)
+	}
+
+	activeAfterRestore, err := repo.FindByID(ctx, userID, active.ID())
+	if err != nil {
+		t.Fatalf("find active subcategory after restore: %v", err)
+	}
+	if activeAfterRestore.ArchivedAt() != nil {
+		t.Fatalf("expected cascade-archived subcategory restored, got archivedAt=%v", activeAfterRestore.ArchivedAt())
+	}
+
+	manuallyArchivedAfterRestore, err := repo.FindByID(ctx, userID, manuallyArchived.ID())
+	if err != nil {
+		t.Fatalf("find manually archived subcategory after restore: %v", err)
+	}
+	if manuallyArchivedAfterRestore.ArchivedAt() == nil {
+		t.Fatal("expected manually archived subcategory to stay archived")
+	}
+	if !manuallyArchivedAfterRestore.ArchivedAt().Equal(manualArchivedAt) {
+		t.Fatalf(
+			"expected manual archivedAt %s to be preserved, got %s",
+			manualArchivedAt,
+			*manuallyArchivedAfterRestore.ArchivedAt(),
+		)
+	}
+}
+
+func TestSubcategoryRepositoryRestoreByIDMapsUniqueConflict(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewSubcategoryRepository(pool)
+	ctx := context.Background()
+
+	userID := insertAccountTestUser(t, pool, "subcat-restore-conflict@example.com")
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID: userID,
+		Name:   "Food",
+		Type:   domaincatalog.CategoryTypeRequired,
+	})
+	if err := categoryRepo.Create(ctx, category); err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+
+	active := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Groceries",
+	})
+	if err := repo.Create(ctx, active); err != nil {
+		t.Fatalf("create active subcategory: %v", err)
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	archived := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "groceries",
+		ArchivedAt: &archivedAt,
+		CreatedAt:  archivedAt.Add(-time.Hour),
+		UpdatedAt:  archivedAt,
+	})
+	if err := repo.Create(ctx, archived); err != nil {
+		t.Fatalf("create archived subcategory with duplicate name: %v", err)
+	}
+
+	err := repo.RestoreByID(ctx, userID, archived.ID(), time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+	if !errors.Is(err, appcatalog.ErrDuplicateActiveSubcategoryName) {
+		t.Fatalf("expected ErrDuplicateActiveSubcategoryName on restore conflict, got %v", err)
+	}
+}
+
+func TestSubcategoryRepositoryUpdateByIDDetectsConcurrentUpdate(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewSubcategoryRepository(pool)
+	ctx := context.Background()
+
+	userID := insertAccountTestUser(t, pool, "update-concurrent-subcategory@example.com")
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID: userID,
+		Name:   "Food",
+		Type:   domaincatalog.CategoryTypeRequired,
+	})
+	if err := categoryRepo.Create(ctx, category); err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+
+	subcategory := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userID,
+		CategoryID: category.ID(),
+		Name:       "Groceries",
+	})
+	if err := repo.Create(ctx, subcategory); err != nil {
+		t.Fatalf("create subcategory: %v", err)
+	}
+
+	current, err := repo.FindByID(ctx, userID, subcategory.ID())
+	if err != nil {
+		t.Fatalf("find subcategory: %v", err)
+	}
+
+	firstUpdateAt := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	firstUpdated, err := domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         current.ID(),
+		UserID:     current.UserID(),
+		CategoryID: current.CategoryID(),
+		Name:       "Products",
+		SortOrder:  current.SortOrder(),
+		ArchivedAt: current.ArchivedAt(),
+		CreatedAt:  current.CreatedAt(),
+		UpdatedAt:  firstUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build first updated subcategory: %v", err)
+	}
+	if err := repo.UpdateByID(ctx, firstUpdated, current.UpdatedAt()); err != nil {
+		t.Fatalf("first update subcategory: %v", err)
+	}
+
+	staleUpdateAt := firstUpdateAt.Add(time.Second)
+	staleUpdated, err := domaincatalog.NewSubcategoryWithParams(domaincatalog.NewSubcategoryParams{
+		ID:         current.ID(),
+		UserID:     current.UserID(),
+		CategoryID: current.CategoryID(),
+		Name:       "Home",
+		SortOrder:  current.SortOrder(),
+		ArchivedAt: current.ArchivedAt(),
+		CreatedAt:  current.CreatedAt(),
+		UpdatedAt:  staleUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build stale updated subcategory: %v", err)
+	}
+
+	err = repo.UpdateByID(ctx, staleUpdated, current.UpdatedAt())
+	if !errors.Is(err, appcatalog.ErrConcurrentSubcategoryUpdate) {
+		t.Fatalf("expected ErrConcurrentSubcategoryUpdate, got %v", err)
+	}
+}
+
 type subcategoryFixtureParams struct {
 	UserID     shared.UserID
 	CategoryID shared.CategoryID

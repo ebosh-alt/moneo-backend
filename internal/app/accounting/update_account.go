@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	domainaccounting "moneo/internal/domain/accounting"
 	"moneo/internal/domain/shared"
@@ -12,7 +13,11 @@ import (
 
 type UpdateAccountRepository interface {
 	FindByID(ctx context.Context, userID shared.UserID, accountID shared.AccountID) (domainaccounting.Account, error)
-	UpdateByID(ctx context.Context, account domainaccounting.Account) error
+	UpdateByID(
+		ctx context.Context,
+		account domainaccounting.Account,
+		expectedUpdatedAt time.Time,
+	) error
 }
 
 type UpdateAccountInput struct {
@@ -80,9 +85,12 @@ func (s *UpdateAccountService) Update(ctx context.Context, input UpdateAccountIn
 		return domainaccounting.Account{}, err
 	}
 
-	if err := s.repo.UpdateByID(ctx, updated); err != nil {
+	if err := s.repo.UpdateByID(ctx, updated, account.UpdatedAt()); err != nil {
 		if errors.Is(err, ErrDuplicateActiveAccountName) {
 			return domainaccounting.Account{}, ErrAccountNameAlreadyExists
+		}
+		if errors.Is(err, ErrConcurrentAccountUpdate) {
+			return domainaccounting.Account{}, ErrConcurrentAccountUpdate
 		}
 		return domainaccounting.Account{}, fmt.Errorf("update account by id: %w", err)
 	}

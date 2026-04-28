@@ -169,7 +169,7 @@ func (s *ListCategoriesService) ListByUser(
 
 type UpdateCategoryRepository interface {
 	FindCategoryByID(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID) (domaincatalog.Category, error)
-	UpdateByID(ctx context.Context, category domaincatalog.Category) error
+	UpdateByID(ctx context.Context, category domaincatalog.Category, expectedUpdatedAt time.Time) error
 }
 
 type UpdateCategoryInput struct {
@@ -236,9 +236,12 @@ func (s *UpdateCategoryService) Update(ctx context.Context, input UpdateCategory
 		return domaincatalog.Category{}, err
 	}
 
-	if err := s.repo.UpdateByID(ctx, updated); err != nil {
+	if err := s.repo.UpdateByID(ctx, updated, category.UpdatedAt()); err != nil {
 		if errors.Is(err, ErrDuplicateActiveCategoryName) {
 			return domaincatalog.Category{}, ErrCategoryNameAlreadyExists
+		}
+		if errors.Is(err, ErrConcurrentCategoryUpdate) {
+			return domaincatalog.Category{}, ErrConcurrentCategoryUpdate
 		}
 
 		return domaincatalog.Category{}, fmt.Errorf("update category by id: %w", err)
@@ -249,7 +252,17 @@ func (s *UpdateCategoryService) Update(ctx context.Context, input UpdateCategory
 
 type CategorySubcategoryArchiveRepository interface {
 	ArchiveByCategoryID(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID, archivedAt time.Time) error
-	RestoreByCategoryID(ctx context.Context, userID shared.UserID, categoryID shared.CategoryID, updatedAt time.Time) error
+	RestoreByCategoryID(
+		ctx context.Context,
+		userID shared.UserID,
+		categoryID shared.CategoryID,
+		updatedAt time.Time,
+		cascadeArchivedAt time.Time,
+	) error
+}
+
+type CategoryTxManager interface {
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 type ArchiveCategoryRepository interface {
@@ -260,17 +273,24 @@ type ArchiveCategoryRepository interface {
 type ArchiveCategoryService struct {
 	repo          ArchiveCategoryRepository
 	subcategories CategorySubcategoryArchiveRepository
+	txManager     CategoryTxManager
 	clock         CategoryClock
 }
 
 func NewArchiveCategoryService(
 	repo ArchiveCategoryRepository,
 	subcategories CategorySubcategoryArchiveRepository,
+	txManager CategoryTxManager,
 	clock CategoryClock,
 ) *ArchiveCategoryService {
+	if txManager == nil {
+		txManager = noopCategoryTxManager{}
+	}
+
 	return &ArchiveCategoryService{
 		repo:          repo,
 		subcategories: subcategories,
+		txManager:     txManager,
 		clock:         clock,
 	}
 }
@@ -280,30 +300,38 @@ func (s *ArchiveCategoryService) Archive(
 	userID shared.UserID,
 	categoryID shared.CategoryID,
 ) (domaincatalog.Category, error) {
-	category, err := s.repo.FindCategoryByID(ctx, userID, categoryID)
-	if err != nil {
-		return domaincatalog.Category{}, fmt.Errorf("find category by id: %w", err)
-	}
-	if category.ArchivedAt() != nil {
-		return category, nil
-	}
-
-	archivedAt := s.clock.Now().UTC()
-	if err := s.repo.ArchiveByID(ctx, userID, categoryID, archivedAt); err != nil {
-		return domaincatalog.Category{}, fmt.Errorf("archive category by id: %w", err)
-	}
-	if s.subcategories != nil {
-		if err := s.subcategories.ArchiveByCategoryID(ctx, userID, categoryID, archivedAt); err != nil {
-			return domaincatalog.Category{}, fmt.Errorf("archive subcategories by category id: %w", err)
+	var archivedCategory domaincatalog.Category
+	if err := s.txManager.WithinTx(ctx, func(txCtx context.Context) error {
+		category, err := s.repo.FindCategoryByID(txCtx, userID, categoryID)
+		if err != nil {
+			return fmt.Errorf("find category by id: %w", err)
 		}
+		if category.ArchivedAt() != nil {
+			archivedCategory = category
+			return nil
+		}
+
+		archivedAt := s.clock.Now().UTC()
+		if err := s.repo.ArchiveByID(txCtx, userID, categoryID, archivedAt); err != nil {
+			return fmt.Errorf("archive category by id: %w", err)
+		}
+		if s.subcategories != nil {
+			if err := s.subcategories.ArchiveByCategoryID(txCtx, userID, categoryID, archivedAt); err != nil {
+				return fmt.Errorf("archive subcategories by category id: %w", err)
+			}
+		}
+
+		archived, buildErr := buildArchivedCategory(category, archivedAt)
+		if buildErr != nil {
+			return buildErr
+		}
+		archivedCategory = archived
+		return nil
+	}); err != nil {
+		return domaincatalog.Category{}, err
 	}
 
-	archived, buildErr := buildArchivedCategory(category, archivedAt)
-	if buildErr != nil {
-		return domaincatalog.Category{}, buildErr
-	}
-
-	return archived, nil
+	return archivedCategory, nil
 }
 
 type RestoreCategoryRepository interface {
@@ -314,17 +342,24 @@ type RestoreCategoryRepository interface {
 type RestoreCategoryService struct {
 	repo          RestoreCategoryRepository
 	subcategories CategorySubcategoryArchiveRepository
+	txManager     CategoryTxManager
 	clock         CategoryClock
 }
 
 func NewRestoreCategoryService(
 	repo RestoreCategoryRepository,
 	subcategories CategorySubcategoryArchiveRepository,
+	txManager CategoryTxManager,
 	clock CategoryClock,
 ) *RestoreCategoryService {
+	if txManager == nil {
+		txManager = noopCategoryTxManager{}
+	}
+
 	return &RestoreCategoryService{
 		repo:          repo,
 		subcategories: subcategories,
+		txManager:     txManager,
 		clock:         clock,
 	}
 }
@@ -334,30 +369,47 @@ func (s *RestoreCategoryService) Restore(
 	userID shared.UserID,
 	categoryID shared.CategoryID,
 ) (domaincatalog.Category, error) {
-	category, err := s.repo.FindCategoryByID(ctx, userID, categoryID)
-	if err != nil {
-		return domaincatalog.Category{}, fmt.Errorf("find category by id: %w", err)
-	}
-	if category.ArchivedAt() == nil {
-		return category, nil
-	}
-
-	updatedAt := s.clock.Now().UTC()
-	if err := s.repo.RestoreByID(ctx, userID, categoryID, updatedAt); err != nil {
-		return domaincatalog.Category{}, fmt.Errorf("restore category by id: %w", err)
-	}
-	if s.subcategories != nil {
-		if err := s.subcategories.RestoreByCategoryID(ctx, userID, categoryID, updatedAt); err != nil {
-			return domaincatalog.Category{}, fmt.Errorf("restore subcategories by category id: %w", err)
+	var restoredCategory domaincatalog.Category
+	if err := s.txManager.WithinTx(ctx, func(txCtx context.Context) error {
+		category, err := s.repo.FindCategoryByID(txCtx, userID, categoryID)
+		if err != nil {
+			return fmt.Errorf("find category by id: %w", err)
 		}
+		if category.ArchivedAt() == nil {
+			restoredCategory = category
+			return nil
+		}
+
+		updatedAt := s.clock.Now().UTC()
+		if err := s.repo.RestoreByID(txCtx, userID, categoryID, updatedAt); err != nil {
+			if errors.Is(err, ErrDuplicateActiveCategoryName) {
+				return ErrCategoryNameAlreadyExists
+			}
+			return fmt.Errorf("restore category by id: %w", err)
+		}
+		if s.subcategories != nil {
+			if err := s.subcategories.RestoreByCategoryID(
+				txCtx,
+				userID,
+				categoryID,
+				updatedAt,
+				*category.ArchivedAt(),
+			); err != nil {
+				return fmt.Errorf("restore subcategories by category id: %w", err)
+			}
+		}
+
+		restored, buildErr := buildRestoredCategory(category, updatedAt)
+		if buildErr != nil {
+			return buildErr
+		}
+		restoredCategory = restored
+		return nil
+	}); err != nil {
+		return domaincatalog.Category{}, err
 	}
 
-	restored, buildErr := buildRestoredCategory(category, updatedAt)
-	if buildErr != nil {
-		return domaincatalog.Category{}, buildErr
-	}
-
-	return restored, nil
+	return restoredCategory, nil
 }
 
 func buildArchivedCategory(
@@ -399,4 +451,10 @@ func resolveCategorySortOrder(sortOrder *int) int {
 		return 100
 	}
 	return *sortOrder
+}
+
+type noopCategoryTxManager struct{}
+
+func (noopCategoryTxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
 }

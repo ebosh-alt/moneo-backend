@@ -500,7 +500,13 @@ func TestCategoriesIncludeSubcategoriesAndFilters(t *testing.T) {
 	var listWithSubcategories struct {
 		Items []struct {
 			ID            string `json:"id"`
-			Subcategories []any  `json:"subcategories"`
+			Subcategories []struct {
+				ID         string  `json:"id"`
+				CategoryID string  `json:"categoryId"`
+				SortOrder  int     `json:"sortOrder"`
+				IsArchived bool    `json:"isArchived"`
+				ArchivedAt *string `json:"archivedAt"`
+			} `json:"subcategories"`
 		} `json:"items"`
 	}
 	decodeJSONResponse(t, listWithSubcategoriesRec, &listWithSubcategories)
@@ -512,6 +518,20 @@ func TestCategoriesIncludeSubcategoriesAndFilters(t *testing.T) {
 	}
 	if len(listWithSubcategories.Items[0].Subcategories) != 2 {
 		t.Fatalf("expected 2 required subcategories, got %d", len(listWithSubcategories.Items[0].Subcategories))
+	}
+	for i, subcategory := range listWithSubcategories.Items[0].Subcategories {
+		if subcategory.CategoryID != string(requiredCategoryID) {
+			t.Fatalf("subcategory[%d]: expected categoryId %q, got %q", i, requiredCategoryID, subcategory.CategoryID)
+		}
+		if subcategory.SortOrder <= 0 {
+			t.Fatalf("subcategory[%d]: expected positive sortOrder, got %d", i, subcategory.SortOrder)
+		}
+		if subcategory.IsArchived {
+			t.Fatalf("subcategory[%d]: expected active subcategory, got archived", i)
+		}
+		if subcategory.ArchivedAt != nil {
+			t.Fatalf("subcategory[%d]: expected archivedAt=nil, got %v", i, subcategory.ArchivedAt)
+		}
 	}
 
 	listWithoutSubcategoriesRec := performJSONRequest(
@@ -552,11 +572,30 @@ func TestCategoriesIncludeSubcategoriesAndFilters(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", getWithSubcategoriesRec.Code)
 	}
 	var getWithSubcategories struct {
-		Subcategories []any `json:"subcategories"`
+		Subcategories []struct {
+			CategoryID string  `json:"categoryId"`
+			SortOrder  int     `json:"sortOrder"`
+			IsArchived bool    `json:"isArchived"`
+			ArchivedAt *string `json:"archivedAt"`
+		} `json:"subcategories"`
 	}
 	decodeJSONResponse(t, getWithSubcategoriesRec, &getWithSubcategories)
 	if len(getWithSubcategories.Subcategories) != 2 {
 		t.Fatalf("expected 2 subcategories in get response, got %d", len(getWithSubcategories.Subcategories))
+	}
+	for i, subcategory := range getWithSubcategories.Subcategories {
+		if subcategory.CategoryID != string(requiredCategoryID) {
+			t.Fatalf("get subcategory[%d]: expected categoryId %q, got %q", i, requiredCategoryID, subcategory.CategoryID)
+		}
+		if subcategory.SortOrder <= 0 {
+			t.Fatalf("get subcategory[%d]: expected positive sortOrder, got %d", i, subcategory.SortOrder)
+		}
+		if subcategory.IsArchived {
+			t.Fatalf("get subcategory[%d]: expected active subcategory, got archived", i)
+		}
+		if subcategory.ArchivedAt != nil {
+			t.Fatalf("get subcategory[%d]: expected archivedAt=nil, got %v", i, subcategory.ArchivedAt)
+		}
 	}
 }
 
@@ -1263,28 +1302,28 @@ type catalogRouterFixture struct {
 func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) catalogRouterFixture {
 	t.Helper()
 
-	catalogHandler := transporthttp.NewCatalogHandler(
-		accountCreateUseCase{store: store},
-		accountGetUseCase{store: store},
-		accountListUseCase{store: store},
-		accountSummaryUseCase{store: store},
-		accountArchiveUseCase{store: store},
-		accountRestoreUseCase{store: store},
-		accountUpdateUseCase{store: store},
-		categoryCreateUseCase{store: store},
-		categoryGetUseCase{store: store},
-		categoryListUseCase{store: store},
-		categoryUpdateUseCase{store: store},
-		categoryArchiveUseCase{store: store},
-		categoryRestoreUseCase{store: store},
-		subcategoryCreateUseCase{store: store},
-		subcategoryListByCategoryUseCase{store: store},
-		subcategoryUpdateUseCase{store: store},
-		subcategoryArchiveUseCase{store: store},
-		subcategoryRestoreUseCase{store: store},
-		subcategoryGetUseCase{store: store},
-		subcategoryListUseCase{store: store},
-	)
+	catalogHandler := transporthttp.NewCatalogHandler(transporthttp.CatalogHandlerDeps{
+		AccountsCreate:              accountCreateUseCase{store: store},
+		AccountsGet:                 accountGetUseCase{store: store},
+		AccountsList:                accountListUseCase{store: store},
+		AccountsSummary:             accountSummaryUseCase{store: store},
+		AccountsArchive:             accountArchiveUseCase{store: store},
+		AccountsRestore:             accountRestoreUseCase{store: store},
+		AccountsUpdate:              accountUpdateUseCase{store: store},
+		CategoriesCreate:            categoryCreateUseCase{store: store},
+		CategoriesGet:               categoryGetUseCase{store: store},
+		CategoriesList:              categoryListUseCase{store: store},
+		CategoriesUpdate:            categoryUpdateUseCase{store: store},
+		CategoriesArchive:           categoryArchiveUseCase{store: store},
+		CategoriesRestore:           categoryRestoreUseCase{store: store},
+		SubcategoriesCreate:         subcategoryCreateUseCase{store: store},
+		SubcategoriesListByCategory: subcategoryListByCategoryUseCase{store: store},
+		SubcategoriesUpdate:         subcategoryUpdateUseCase{store: store},
+		SubcategoriesArchive:        subcategoryArchiveUseCase{store: store},
+		SubcategoriesRestore:        subcategoryRestoreUseCase{store: store},
+		SubcategoriesGet:            subcategoryGetUseCase{store: store},
+		SubcategoriesList:           subcategoryListUseCase{store: store},
+	})
 
 	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		CatalogHandler: catalogHandler,

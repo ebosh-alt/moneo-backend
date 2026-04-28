@@ -2,6 +2,7 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,6 +42,9 @@ func (s *RestoreAccountService) Restore(
 
 	updatedAt := s.clock.Now().UTC()
 	if err := s.repo.RestoreByID(ctx, userID, accountID, updatedAt); err != nil {
+		if errors.Is(err, ErrDuplicateActiveAccountName) {
+			return domainaccounting.Account{}, ErrAccountNameAlreadyExists
+		}
 		return domainaccounting.Account{}, fmt.Errorf("restore account by id: %w", err)
 	}
 

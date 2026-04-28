@@ -215,6 +215,105 @@ func TestCategoryRepositoryListByUserIDSupportsTypeAndArchiveFiltering(t *testin
 	}
 }
 
+func TestCategoryRepositoryRestoreByIDMapsUniqueConflict(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	repo := NewCategoryRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "cat-restore-conflict@example.com")
+
+	active := newCategoryFixture(t, categoryFixtureParams{
+		UserID: userID,
+		Name:   "Food",
+		Type:   domaincatalog.CategoryTypeRequired,
+	})
+	if err := repo.Create(ctx, active); err != nil {
+		t.Fatalf("create active category: %v", err)
+	}
+
+	archivedAt := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	archived := newCategoryFixture(t, categoryFixtureParams{
+		UserID:     userID,
+		Name:       "food",
+		Type:       domaincatalog.CategoryTypeFlexible,
+		ArchivedAt: &archivedAt,
+		CreatedAt:  archivedAt.Add(-time.Hour),
+		UpdatedAt:  archivedAt,
+	})
+	if err := repo.Create(ctx, archived); err != nil {
+		t.Fatalf("create archived category with duplicate name: %v", err)
+	}
+
+	err := repo.RestoreByID(ctx, userID, archived.ID(), time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+	if !errors.Is(err, appcatalog.ErrDuplicateActiveCategoryName) {
+		t.Fatalf("expected ErrDuplicateActiveCategoryName on restore conflict, got %v", err)
+	}
+}
+
+func TestCategoryRepositoryUpdateByIDDetectsConcurrentUpdate(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetAccountsFixtures(t, pool)
+
+	repo := NewCategoryRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "update-concurrent-category@example.com")
+
+	category := newCategoryFixture(t, categoryFixtureParams{
+		UserID: userID,
+		Name:   "Food",
+		Type:   domaincatalog.CategoryTypeRequired,
+	})
+	if err := repo.Create(ctx, category); err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+
+	current, err := repo.FindCategoryByID(ctx, userID, category.ID())
+	if err != nil {
+		t.Fatalf("find category: %v", err)
+	}
+
+	firstUpdateAt := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	firstUpdated, err := domaincatalog.NewCategoryWithParams(domaincatalog.NewCategoryParams{
+		ID:         current.ID(),
+		UserID:     current.UserID(),
+		Name:       "Products",
+		Type:       current.Type(),
+		Color:      current.Color(),
+		SortOrder:  current.SortOrder(),
+		ArchivedAt: current.ArchivedAt(),
+		CreatedAt:  current.CreatedAt(),
+		UpdatedAt:  firstUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build first updated category: %v", err)
+	}
+	if err := repo.UpdateByID(ctx, firstUpdated, current.UpdatedAt()); err != nil {
+		t.Fatalf("first update category: %v", err)
+	}
+
+	staleUpdateAt := firstUpdateAt.Add(time.Second)
+	staleUpdated, err := domaincatalog.NewCategoryWithParams(domaincatalog.NewCategoryParams{
+		ID:         current.ID(),
+		UserID:     current.UserID(),
+		Name:       "Home",
+		Type:       current.Type(),
+		Color:      current.Color(),
+		SortOrder:  current.SortOrder(),
+		ArchivedAt: current.ArchivedAt(),
+		CreatedAt:  current.CreatedAt(),
+		UpdatedAt:  staleUpdateAt,
+	})
+	if err != nil {
+		t.Fatalf("build stale updated category: %v", err)
+	}
+
+	err = repo.UpdateByID(ctx, staleUpdated, current.UpdatedAt())
+	if !errors.Is(err, appcatalog.ErrConcurrentCategoryUpdate) {
+		t.Fatalf("expected ErrConcurrentCategoryUpdate, got %v", err)
+	}
+}
+
 type categoryFixtureParams struct {
 	UserID     shared.UserID
 	Name       string

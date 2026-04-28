@@ -85,6 +85,9 @@ func (s *CreateSubcategoryService) Create(
 		if errors.Is(err, ErrDuplicateActiveSubcategoryName) {
 			return domaincatalog.Subcategory{}, ErrSubcategoryNameAlreadyExists
 		}
+		if errors.Is(err, ErrParentCategoryArchived) {
+			return domaincatalog.Subcategory{}, ErrParentCategoryArchived
+		}
 
 		return domaincatalog.Subcategory{}, fmt.Errorf("create subcategory: %w", err)
 	}
@@ -145,7 +148,7 @@ func (s *ListSubcategoriesByCategoryService) List(
 
 type UpdateSubcategoryRepository interface {
 	FindByID(ctx context.Context, userID shared.UserID, subcategoryID shared.SubcategoryID) (domaincatalog.Subcategory, error)
-	UpdateByID(ctx context.Context, subcategory domaincatalog.Subcategory) error
+	UpdateByID(ctx context.Context, subcategory domaincatalog.Subcategory, expectedUpdatedAt time.Time) error
 }
 
 type UpdateSubcategoryInput struct {
@@ -204,9 +207,12 @@ func (s *UpdateSubcategoryService) Update(
 		return domaincatalog.Subcategory{}, err
 	}
 
-	if err := s.repo.UpdateByID(ctx, updated); err != nil {
+	if err := s.repo.UpdateByID(ctx, updated, subcategory.UpdatedAt()); err != nil {
 		if errors.Is(err, ErrDuplicateActiveSubcategoryName) {
 			return domaincatalog.Subcategory{}, ErrSubcategoryNameAlreadyExists
+		}
+		if errors.Is(err, ErrConcurrentSubcategoryUpdate) {
+			return domaincatalog.Subcategory{}, ErrConcurrentSubcategoryUpdate
 		}
 		return domaincatalog.Subcategory{}, fmt.Errorf("update subcategory by id: %w", err)
 	}
@@ -301,6 +307,12 @@ func (s *RestoreSubcategoryService) Restore(
 
 	updatedAt := s.clock.Now().UTC()
 	if err := s.repo.RestoreByID(ctx, userID, subcategoryID, updatedAt); err != nil {
+		if errors.Is(err, ErrDuplicateActiveSubcategoryName) {
+			return domaincatalog.Subcategory{}, ErrSubcategoryNameAlreadyExists
+		}
+		if errors.Is(err, ErrParentCategoryArchived) {
+			return domaincatalog.Subcategory{}, ErrParentCategoryArchived
+		}
 		return domaincatalog.Subcategory{}, fmt.Errorf("restore subcategory by id: %w", err)
 	}
 
