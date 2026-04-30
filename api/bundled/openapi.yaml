@@ -1,0 +1,3147 @@
+openapi: 3.0.3
+info:
+  title: Moneo Backend API (as-is)
+  version: 0.1.0
+  description: |
+    Contract documents current behavior of catalogs and transactions endpoints as implemented.
+    Includes both /api/v1 and legacy duplicate routes.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: Accounts
+  - name: Categories
+  - name: Subcategories
+  - name: Transactions
+paths:
+  /api/v1/accounts:
+    post:
+      tags:
+        - Accounts
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - Accounts
+      operationId: listAccounts
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: currency
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - createdAt:desc
+              - name:asc
+              - balance:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAccounts'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/accounts/summary:
+    get:
+      tags:
+        - Accounts
+      operationId: getAccountsSummary
+      parameters:
+        - in: query
+          name: currency
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags:
+        - Accounts
+      operationId: getAccount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Accounts
+      operationId: patchAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchAccountRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/accounts/{accountId}/archive:
+    post:
+      tags:
+        - Accounts
+      operationId: archiveAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/accounts/{accountId}/restore:
+    post:
+      tags:
+        - Accounts
+      operationId: restoreAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/categories:
+    post:
+      tags:
+        - Categories
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - Categories
+      operationId: listCategories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - $ref: '#/components/parameters/IncludeSubcategories'
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - sortOrder:asc
+              - name:asc
+              - createdAt:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      tags:
+        - Categories
+      operationId: getCategory
+      parameters:
+        - $ref: '#/components/parameters/IncludeSubcategories'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Categories
+      operationId: patchCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchCategoryRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - Categories
+      operationId: deleteCategory
+      responses:
+        '200':
+          description: Archived (soft delete)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/categories/{categoryId}/restore:
+    post:
+      tags:
+        - Categories
+      operationId: restoreCategory
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/categories/{categoryId}/subcategories:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    post:
+      tags:
+        - Subcategories
+      operationId: createSubcategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubcategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - Subcategories
+      operationId: listCategorySubcategories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubcategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/subcategories:
+    get:
+      tags:
+        - Subcategories
+      operationId: listSubcategories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - in: query
+          name: categoryId
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - sortOrder:asc
+              - name:asc
+              - createdAt:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubcategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/subcategories/{subcategoryId}:
+    parameters:
+      - $ref: '#/components/parameters/SubcategoryId'
+    get:
+      tags:
+        - Subcategories
+      operationId: getSubcategory
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Subcategories
+      operationId: patchSubcategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchSubcategoryRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - Subcategories
+      operationId: deleteSubcategory
+      responses:
+        '200':
+          description: Archived (soft delete)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/subcategories/{subcategoryId}/restore:
+    post:
+      tags:
+        - Subcategories
+      operationId: restoreSubcategory
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions:
+    post:
+      tags:
+        - Transactions
+      operationId: createTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags:
+        - Transactions
+      operationId: listTransactions
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: month
+          schema:
+            type: string
+            pattern: ^\\d{4}-\\d{2}$
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: accountId
+          schema:
+            type: string
+        - in: query
+          name: categoryId
+          schema:
+            type: string
+        - in: query
+          name: subcategoryId
+          schema:
+            type: string
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: budgetMemberId
+          schema:
+            type: string
+          description: Currently unsupported in MVP1 (returns 400 validation_error when provided)
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - occurredAt:desc
+              - occurredAt:asc
+              - createdAt:desc
+              - createdAt:asc
+              - amount:desc
+              - amount:asc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTransactions'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/bulk:
+    post:
+      tags:
+        - Transactions
+      operationId: createTransactionsBulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionsBulkRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionItemsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Transactions
+      operationId: patchTransactionsBulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTransactionsBulkRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionItemsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/{transactionId}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      tags:
+        - Transactions
+      operationId: getTransaction
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Transactions
+      operationId: patchTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTransactionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - Transactions
+      operationId: deleteTransaction
+      responses:
+        '204':
+          description: No Content
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/{transactionId}/post:
+    post:
+      tags:
+        - Transactions
+      operationId: postTransaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/{transactionId}/cancel:
+    post:
+      tags:
+        - Transactions
+      operationId: cancelTransaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/transactions/{transactionId}/duplicate:
+    post:
+      tags:
+        - Transactions
+      operationId: duplicateTransaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuplicateTransactionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /accounts:
+    post:
+      operationId: createAccountLegacy
+      tags:
+        - Accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listAccountsLegacy
+      tags:
+        - Accounts
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: currency
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - createdAt:desc
+              - name:asc
+              - balance:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAccounts'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /accounts/summary:
+    get:
+      operationId: getAccountsSummaryLegacy
+      tags:
+        - Accounts
+      parameters:
+        - in: query
+          name: currency
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      operationId: getAccountLegacy
+      tags:
+        - Accounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: patchAccountLegacy
+      tags:
+        - Accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchAccountRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /accounts/{accountId}/archive:
+    post:
+      operationId: archiveAccountLegacy
+      tags:
+        - Accounts
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /accounts/{accountId}/restore:
+    post:
+      operationId: restoreAccountLegacy
+      tags:
+        - Accounts
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /categories:
+    post:
+      operationId: createCategoryLegacy
+      tags:
+        - Categories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listCategoriesLegacy
+      tags:
+        - Categories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - $ref: '#/components/parameters/IncludeSubcategories'
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - sortOrder:asc
+              - name:asc
+              - createdAt:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      operationId: getCategoryLegacy
+      tags:
+        - Categories
+      parameters:
+        - $ref: '#/components/parameters/IncludeSubcategories'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: patchCategoryLegacy
+      tags:
+        - Categories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchCategoryRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteCategoryLegacy
+      tags:
+        - Categories
+      responses:
+        '200':
+          description: Archived (soft delete)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /categories/{categoryId}/restore:
+    post:
+      operationId: restoreCategoryLegacy
+      tags:
+        - Categories
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /categories/{categoryId}/subcategories:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    post:
+      operationId: createSubcategoryLegacy
+      tags:
+        - Subcategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubcategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listCategorySubcategoriesLegacy
+      tags:
+        - Subcategories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubcategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /subcategories:
+    get:
+      operationId: listSubcategoriesLegacy
+      tags:
+        - Subcategories
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/IncludeArchived'
+        - in: query
+          name: categoryId
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - sortOrder:asc
+              - name:asc
+              - createdAt:desc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubcategories'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /subcategories/{subcategoryId}:
+    parameters:
+      - $ref: '#/components/parameters/SubcategoryId'
+    get:
+      operationId: getSubcategoryLegacy
+      tags:
+        - Subcategories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: patchSubcategoryLegacy
+      tags:
+        - Subcategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchSubcategoryRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteSubcategoryLegacy
+      tags:
+        - Subcategories
+      responses:
+        '200':
+          description: Archived (soft delete)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /subcategories/{subcategoryId}/restore:
+    post:
+      operationId: restoreSubcategoryLegacy
+      tags:
+        - Subcategories
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subcategory'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions:
+    post:
+      operationId: createTransactionLegacy
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listTransactionsLegacy
+      tags:
+        - Transactions
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - in: query
+          name: month
+          schema:
+            type: string
+            pattern: ^\\d{4}-\\d{2}$
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: accountId
+          schema:
+            type: string
+        - in: query
+          name: categoryId
+          schema:
+            type: string
+        - in: query
+          name: subcategoryId
+          schema:
+            type: string
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: budgetMemberId
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - occurredAt:desc
+              - occurredAt:asc
+              - createdAt:desc
+              - createdAt:asc
+              - amount:desc
+              - amount:asc
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTransactions'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions/bulk:
+    post:
+      operationId: createTransactionsBulkLegacy
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionsBulkRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionItemsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: patchTransactionsBulkLegacy
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTransactionsBulkRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionItemsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions/{transactionId}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      operationId: getTransactionLegacy
+      tags:
+        - Transactions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: patchTransactionLegacy
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTransactionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteTransactionLegacy
+      tags:
+        - Transactions
+      responses:
+        '204':
+          description: No Content
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions/{transactionId}/post:
+    post:
+      operationId: postTransactionLegacy
+      tags:
+        - Transactions
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions/{transactionId}/cancel:
+    post:
+      operationId: cancelTransactionLegacy
+      tags:
+        - Transactions
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /transactions/{transactionId}/duplicate:
+    post:
+      operationId: duplicateTransactionLegacy
+      tags:
+        - Transactions
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuplicateTransactionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/BusinessRuleError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        minimum: 1
+      description: Default 50, max clamped to 200.
+    Offset:
+      in: query
+      name: offset
+      schema:
+        type: integer
+        minimum: 0
+    IncludeArchived:
+      in: query
+      name: includeArchived
+      schema:
+        type: boolean
+    AccountId:
+      in: path
+      name: accountId
+      required: true
+      schema:
+        type: string
+    IncludeSubcategories:
+      in: query
+      name: includeSubcategories
+      schema:
+        type: boolean
+    CategoryId:
+      in: path
+      name: categoryId
+      required: true
+      schema:
+        type: string
+    SubcategoryId:
+      in: path
+      name: subcategoryId
+      required: true
+      schema:
+        type: string
+    TransactionId:
+      in: path
+      name: transactionId
+      required: true
+      schema:
+        type: string
+  schemas:
+    Account:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - currency
+        - balance
+        - initialBalance
+        - includeInNetWorth
+        - includeInDailyBudget
+        - isArchived
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        currency:
+          type: string
+        balance:
+          type: string
+        initialBalance:
+          type: string
+        includeInNetWorth:
+          type: boolean
+        includeInDailyBudget:
+          type: boolean
+        isArchived:
+          type: boolean
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Pagination:
+      type: object
+      required:
+        - limit
+        - offset
+        - total
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+    PaginatedAccounts:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ErrorDetail:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+    ErrorBody:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - validation_error
+            - unauthorized
+            - forbidden
+            - not_found
+            - conflict
+            - business_rule_violation
+            - internal_error
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    CreateAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        currency:
+          type: string
+        initialBalance:
+          type: string
+        includeInNetWorth:
+          type: boolean
+        includeInDailyBudget:
+          type: boolean
+    AccountSummaryAccount:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - currency
+        - balance
+        - includeInNetWorth
+        - includeInDailyBudget
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        currency:
+          type: string
+        balance:
+          type: string
+        includeInNetWorth:
+          type: boolean
+        includeInDailyBudget:
+          type: boolean
+    AccountSummary:
+      type: object
+      required:
+        - currency
+        - netWorth
+        - cashBalance
+        - availableForDailyBudget
+        - creditLiabilities
+        - accounts
+      properties:
+        currency:
+          type: string
+        netWorth:
+          type: string
+        cashBalance:
+          type: string
+        availableForDailyBudget:
+          type: string
+        creditLiabilities:
+          type: string
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountSummaryAccount'
+    PatchAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        includeInNetWorth:
+          type: boolean
+        includeInDailyBudget:
+          type: boolean
+        currency:
+          type: string
+        initialBalance:
+          type: string
+        balance:
+          type: string
+    Subcategory:
+      type: object
+      required:
+        - id
+        - categoryId
+        - name
+        - sortOrder
+        - isArchived
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        categoryId:
+          type: string
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        isArchived:
+          type: boolean
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Category:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - sortOrder
+        - isArchived
+        - subcategories
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        isArchived:
+          type: boolean
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        subcategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subcategory'
+    PaginatedCategories:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    CreateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+    PatchCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+    PaginatedSubcategories:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subcategory'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    CreateSubcategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        sortOrder:
+          type: integer
+    PatchSubcategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        sortOrder:
+          type: integer
+    Transaction:
+      type: object
+      required:
+        - id
+        - type
+        - status
+        - amount
+        - currency
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        amount:
+          type: string
+        currency:
+          type: string
+        occurredAt:
+          type: string
+          nullable: true
+        plannedAt:
+          type: string
+          nullable: true
+        accountFromId:
+          type: string
+          nullable: true
+        accountToId:
+          type: string
+          nullable: true
+        categoryId:
+          type: string
+          nullable: true
+        subcategoryId:
+          type: string
+          nullable: true
+        budgetMemberId:
+          type: string
+          nullable: true
+        incomeSourceId:
+          type: string
+          nullable: true
+        debtId:
+          type: string
+          nullable: true
+        goalId:
+          type: string
+          nullable: true
+        investmentId:
+          type: string
+          nullable: true
+        recurringPaymentId:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PaginatedTransactions:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    CreateTransactionRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+        amount:
+          type: string
+        currency:
+          type: string
+        occurredAt:
+          type: string
+        plannedAt:
+          type: string
+        accountFromId:
+          type: string
+        accountToId:
+          type: string
+        categoryId:
+          type: string
+        subcategoryId:
+          type: string
+        comment:
+          type: string
+        budgetMemberId:
+          nullable: true
+        incomeSourceId:
+          nullable: true
+        debtId:
+          nullable: true
+        goalId:
+          nullable: true
+        investmentId:
+          nullable: true
+        recurringPaymentId:
+          nullable: true
+    CreateTransactionsBulkRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateTransactionRequest'
+    TransactionItemsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+    PatchTransactionRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          nullable: true
+        plannedAt:
+          type: string
+          nullable: true
+        accountFromId:
+          type: string
+          nullable: true
+        accountToId:
+          type: string
+          nullable: true
+        categoryId:
+          type: string
+          nullable: true
+        subcategoryId:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        budgetMemberId:
+          nullable: true
+        incomeSourceId:
+          nullable: true
+        debtId:
+          nullable: true
+        goalId:
+          nullable: true
+        investmentId:
+          nullable: true
+        recurringPaymentId:
+          nullable: true
+    PatchTransactionsBulkItemRequest:
+      allOf:
+        - $ref: '#/components/schemas/PatchTransactionRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+    PatchTransactionsBulkRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatchTransactionsBulkItemRequest'
+    DuplicateTransactionRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          nullable: true
+        plannedAt:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        budgetMemberId:
+          nullable: true
+        incomeSourceId:
+          nullable: true
+        debtId:
+          nullable: true
+        goalId:
+          nullable: true
+        investmentId:
+          nullable: true
+        recurringPaymentId:
+          nullable: true
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnauthorizedError:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ConflictError:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BusinessRuleError:
+      description: Business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  pathItems:
+    AccountsPath:
+      post:
+        operationId: createAccountLegacy
+        tags:
+          - Accounts
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAccountRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Account'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      get:
+        operationId: listAccountsLegacy
+        tags:
+          - Accounts
+        parameters:
+          - $ref: '#/components/parameters/Limit'
+          - $ref: '#/components/parameters/Offset'
+          - $ref: '#/components/parameters/IncludeArchived'
+          - in: query
+            name: type
+            schema:
+              type: string
+          - in: query
+            name: currency
+            schema:
+              type: string
+          - in: query
+            name: sort
+            schema:
+              type: string
+              enum:
+                - createdAt:desc
+                - name:asc
+                - balance:desc
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaginatedAccounts'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    AccountsSummaryPath:
+      get:
+        operationId: getAccountsSummaryLegacy
+        tags:
+          - Accounts
+        parameters:
+          - in: query
+            name: currency
+            required: true
+            schema:
+              type: string
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/AccountSummary'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    AccountByIdPath:
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      get:
+        operationId: getAccountLegacy
+        tags:
+          - Accounts
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Account'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      patch:
+        operationId: patchAccountLegacy
+        tags:
+          - Accounts
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchAccountRequest'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Account'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    AccountArchivePath:
+      post:
+        operationId: archiveAccountLegacy
+        tags:
+          - Accounts
+        parameters:
+          - $ref: '#/components/parameters/AccountId'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Account'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    AccountRestorePath:
+      post:
+        operationId: restoreAccountLegacy
+        tags:
+          - Accounts
+        parameters:
+          - $ref: '#/components/parameters/AccountId'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Account'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    CategoriesPath:
+      post:
+        operationId: createCategoryLegacy
+        tags:
+          - Categories
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCategoryRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Category'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      get:
+        operationId: listCategoriesLegacy
+        tags:
+          - Categories
+        parameters:
+          - $ref: '#/components/parameters/Limit'
+          - $ref: '#/components/parameters/Offset'
+          - $ref: '#/components/parameters/IncludeArchived'
+          - $ref: '#/components/parameters/IncludeSubcategories'
+          - in: query
+            name: type
+            schema:
+              type: string
+          - in: query
+            name: sort
+            schema:
+              type: string
+              enum:
+                - sortOrder:asc
+                - name:asc
+                - createdAt:desc
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaginatedCategories'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    CategoryByIdPath:
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      get:
+        operationId: getCategoryLegacy
+        tags:
+          - Categories
+        parameters:
+          - $ref: '#/components/parameters/IncludeSubcategories'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Category'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      patch:
+        operationId: patchCategoryLegacy
+        tags:
+          - Categories
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchCategoryRequest'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Category'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      delete:
+        operationId: deleteCategoryLegacy
+        tags:
+          - Categories
+        responses:
+          '200':
+            description: Archived (soft delete)
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Category'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    CategoryRestorePath:
+      post:
+        operationId: restoreCategoryLegacy
+        tags:
+          - Categories
+        parameters:
+          - $ref: '#/components/parameters/CategoryId'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Category'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    CategorySubcategoriesPath:
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      post:
+        operationId: createSubcategoryLegacy
+        tags:
+          - Subcategories
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSubcategoryRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Subcategory'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      get:
+        operationId: listCategorySubcategoriesLegacy
+        tags:
+          - Subcategories
+        parameters:
+          - $ref: '#/components/parameters/Limit'
+          - $ref: '#/components/parameters/Offset'
+          - $ref: '#/components/parameters/IncludeArchived'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaginatedSubcategories'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    SubcategoriesPath:
+      get:
+        operationId: listSubcategoriesLegacy
+        tags:
+          - Subcategories
+        parameters:
+          - $ref: '#/components/parameters/Limit'
+          - $ref: '#/components/parameters/Offset'
+          - $ref: '#/components/parameters/IncludeArchived'
+          - in: query
+            name: categoryId
+            schema:
+              type: string
+          - in: query
+            name: sort
+            schema:
+              type: string
+              enum:
+                - sortOrder:asc
+                - name:asc
+                - createdAt:desc
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaginatedSubcategories'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    SubcategoryByIdPath:
+      parameters:
+        - $ref: '#/components/parameters/SubcategoryId'
+      get:
+        operationId: getSubcategoryLegacy
+        tags:
+          - Subcategories
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Subcategory'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      patch:
+        operationId: patchSubcategoryLegacy
+        tags:
+          - Subcategories
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchSubcategoryRequest'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Subcategory'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      delete:
+        operationId: deleteSubcategoryLegacy
+        tags:
+          - Subcategories
+        responses:
+          '200':
+            description: Archived (soft delete)
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Subcategory'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    SubcategoryRestorePath:
+      post:
+        operationId: restoreSubcategoryLegacy
+        tags:
+          - Subcategories
+        parameters:
+          - $ref: '#/components/parameters/SubcategoryId'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Subcategory'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionsPath:
+      post:
+        operationId: createTransactionLegacy
+        tags:
+          - Transactions
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTransactionRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      get:
+        operationId: listTransactionsLegacy
+        tags:
+          - Transactions
+        parameters:
+          - $ref: '#/components/parameters/Limit'
+          - $ref: '#/components/parameters/Offset'
+          - in: query
+            name: month
+            schema:
+              type: string
+              pattern: ^\\d{4}-\\d{2}$
+          - in: query
+            name: from
+            schema:
+              type: string
+              format: date
+          - in: query
+            name: to
+            schema:
+              type: string
+              format: date
+          - in: query
+            name: type
+            schema:
+              type: string
+          - in: query
+            name: status
+            schema:
+              type: string
+          - in: query
+            name: accountId
+            schema:
+              type: string
+          - in: query
+            name: categoryId
+            schema:
+              type: string
+          - in: query
+            name: subcategoryId
+            schema:
+              type: string
+          - in: query
+            name: q
+            schema:
+              type: string
+          - in: query
+            name: budgetMemberId
+            schema:
+              type: string
+          - in: query
+            name: sort
+            schema:
+              type: string
+              enum:
+                - occurredAt:desc
+                - occurredAt:asc
+                - createdAt:desc
+                - createdAt:asc
+                - amount:desc
+                - amount:asc
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaginatedTransactions'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionsBulkPath:
+      post:
+        operationId: createTransactionsBulkLegacy
+        tags:
+          - Transactions
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTransactionsBulkRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TransactionItemsResponse'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      patch:
+        operationId: patchTransactionsBulkLegacy
+        tags:
+          - Transactions
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchTransactionsBulkRequest'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TransactionItemsResponse'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionByIdPath:
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      get:
+        operationId: getTransactionLegacy
+        tags:
+          - Transactions
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      patch:
+        operationId: patchTransactionLegacy
+        tags:
+          - Transactions
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchTransactionRequest'
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+      delete:
+        operationId: deleteTransactionLegacy
+        tags:
+          - Transactions
+        responses:
+          '204':
+            description: No Content
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionPostPath:
+      post:
+        operationId: postTransactionLegacy
+        tags:
+          - Transactions
+        parameters:
+          - $ref: '#/components/parameters/TransactionId'
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionCancelPath:
+      post:
+        operationId: cancelTransactionLegacy
+        tags:
+          - Transactions
+        parameters:
+          - $ref: '#/components/parameters/TransactionId'
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+        responses:
+          '200':
+            description: OK
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '500':
+            $ref: '#/components/responses/InternalError'
+    TransactionDuplicatePath:
+      post:
+        operationId: duplicateTransactionLegacy
+        tags:
+          - Transactions
+        parameters:
+          - $ref: '#/components/parameters/TransactionId'
+        requestBody:
+          required: false
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateTransactionRequest'
+        responses:
+          '201':
+            description: Created
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/Transaction'
+          '400':
+            $ref: '#/components/responses/ValidationError'
+          '401':
+            $ref: '#/components/responses/UnauthorizedError'
+          '404':
+            $ref: '#/components/responses/NotFoundError'
+          '409':
+            $ref: '#/components/responses/ConflictError'
+          '422':
+            $ref: '#/components/responses/BusinessRuleError'
+          '500':
+            $ref: '#/components/responses/InternalError'

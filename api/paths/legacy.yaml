@@ -1,0 +1,37 @@
+paths:
+  /accounts:
+    $ref: '../schemas/components.yaml#/components/pathItems/AccountsPath'
+  /accounts/summary:
+    $ref: '../schemas/components.yaml#/components/pathItems/AccountsSummaryPath'
+  /accounts/{accountId}:
+    $ref: '../schemas/components.yaml#/components/pathItems/AccountByIdPath'
+  /accounts/{accountId}/archive:
+    $ref: '../schemas/components.yaml#/components/pathItems/AccountArchivePath'
+  /accounts/{accountId}/restore:
+    $ref: '../schemas/components.yaml#/components/pathItems/AccountRestorePath'
+  /categories:
+    $ref: '../schemas/components.yaml#/components/pathItems/CategoriesPath'
+  /categories/{categoryId}:
+    $ref: '../schemas/components.yaml#/components/pathItems/CategoryByIdPath'
+  /categories/{categoryId}/restore:
+    $ref: '../schemas/components.yaml#/components/pathItems/CategoryRestorePath'
+  /categories/{categoryId}/subcategories:
+    $ref: '../schemas/components.yaml#/components/pathItems/CategorySubcategoriesPath'
+  /subcategories:
+    $ref: '../schemas/components.yaml#/components/pathItems/SubcategoriesPath'
+  /subcategories/{subcategoryId}:
+    $ref: '../schemas/components.yaml#/components/pathItems/SubcategoryByIdPath'
+  /subcategories/{subcategoryId}/restore:
+    $ref: '../schemas/components.yaml#/components/pathItems/SubcategoryRestorePath'
+  /transactions:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionsPath'
+  /transactions/bulk:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionsBulkPath'
+  /transactions/{transactionId}:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionByIdPath'
+  /transactions/{transactionId}/post:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionPostPath'
+  /transactions/{transactionId}/cancel:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionCancelPath'
+  /transactions/{transactionId}/duplicate:
+    $ref: '../schemas/components.yaml#/components/pathItems/TransactionDuplicatePath'

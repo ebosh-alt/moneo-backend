@@ -30,11 +30,11 @@ build:
 check: fmt vet openapi-lint openapi-generate test build
 
 openapi-lint:
-	npx redocly lint $(OPENAPI_SRC)
+	npx @redocly/cli lint $(OPENAPI_SRC)
 
 openapi-bundle:
 	mkdir -p api/bundled
-	npx redocly bundle $(OPENAPI_SRC) -o $(OPENAPI_BUNDLE)
+	npx @redocly/cli bundle $(OPENAPI_SRC) -o $(OPENAPI_BUNDLE)
 
 openapi-generate: openapi-bundle
 	mkdir -p internal/transport/http/generated
