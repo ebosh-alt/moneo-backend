@@ -133,6 +133,14 @@ type TransactionDuplicateUseCase interface {
 	DuplicateByID(ctx context.Context, input appaccounting.DuplicateTransactionInput) (domaintransactions.Transaction, error)
 }
 
+type TransactionBulkCreateUseCase interface {
+	CreateBulk(ctx context.Context, input appaccounting.BulkCreateTransactionsInput) ([]domaintransactions.Transaction, error)
+}
+
+type TransactionBulkPatchUseCase interface {
+	PatchBulk(ctx context.Context, input appaccounting.BulkPatchTransactionsInput) ([]domaintransactions.Transaction, error)
+}
+
 type CatalogHandler struct {
 	accountsCreate              AccountCreateUseCase
 	accountsGet                 AccountGetUseCase
@@ -162,6 +170,8 @@ type CatalogHandler struct {
 	transactionsPost            TransactionPostUseCase
 	transactionsCancel          TransactionCancelUseCase
 	transactionsDuplicate       TransactionDuplicateUseCase
+	transactionsBulkCreate      TransactionBulkCreateUseCase
+	transactionsBulkPatch       TransactionBulkPatchUseCase
 }
 
 type CatalogHandlerDeps struct {
@@ -193,6 +203,8 @@ type CatalogHandlerDeps struct {
 	TransactionsPost            TransactionPostUseCase
 	TransactionsCancel          TransactionCancelUseCase
 	TransactionsDuplicate       TransactionDuplicateUseCase
+	TransactionsBulkCreate      TransactionBulkCreateUseCase
+	TransactionsBulkPatch       TransactionBulkPatchUseCase
 }
 
 func NewCatalogHandler(deps CatalogHandlerDeps) *CatalogHandler {
@@ -225,6 +237,8 @@ func NewCatalogHandler(deps CatalogHandlerDeps) *CatalogHandler {
 		transactionsPost:            deps.TransactionsPost,
 		transactionsCancel:          deps.TransactionsCancel,
 		transactionsDuplicate:       deps.TransactionsDuplicate,
+		transactionsBulkCreate:      deps.TransactionsBulkCreate,
+		transactionsBulkPatch:       deps.TransactionsBulkPatch,
 	}
 }
 

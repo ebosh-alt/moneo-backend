@@ -351,6 +351,189 @@ func TestTransactionsPostCancelAndDuplicate(t *testing.T) {
 	}
 }
 
+func TestTransactionsBulkCreateAndValidationDetails(t *testing.T) {
+	fixture := newTransactionsRouterWithAuthFixture(t)
+	token := registerAndGetAccessToken(t, fixture.router, "txn-bulk-create@example.com")
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	invalidRec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"type":          "expense",
+				"status":        "posted",
+				"amount":        "900.00",
+				"currency":      "RUB",
+				"accountFromId": "acc_main",
+				"categoryId":    "cat_food",
+			},
+			{
+				"type":          "expense",
+				"status":        "posted",
+				"amount":        "invalid",
+				"currency":      "RUB",
+				"accountFromId": "acc_main",
+				"categoryId":    "cat_food",
+			},
+		},
+	}, headers)
+	if invalidRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", invalidRec.Code)
+	}
+	var invalidPayload structuredErrorResponse
+	decodeJSONResponse(t, invalidRec, &invalidPayload)
+	assertErrorDetailField(t, invalidPayload.Error.Details, "items[1].amount")
+
+	createRec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"type":          "expense",
+				"status":        "posted",
+				"amount":        "900.00",
+				"currency":      "RUB",
+				"occurredAt":    "2026-04-12",
+				"accountFromId": "acc_main",
+				"categoryId":    "cat_food",
+				"comment":       "Groceries",
+			},
+			{
+				"type":          "transfer",
+				"status":        "planned",
+				"amount":        "5000.00",
+				"currency":      "RUB",
+				"occurredAt":    "2026-04-20",
+				"plannedAt":     "2026-04-20",
+				"accountFromId": "acc_main",
+				"accountToId":   "acc_savings",
+				"comment":       "Move to savings",
+			},
+		},
+	}, headers)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", createRec.Code, createRec.Body.String())
+	}
+	var payload struct {
+		Items []map[string]any `json:"items"`
+	}
+	decodeJSONResponse(t, createRec, &payload)
+	if len(payload.Items) != 2 {
+		t.Fatalf("expected 2 created items, got %d", len(payload.Items))
+	}
+}
+
+func TestTransactionsBulkCreateAllOrNothing(t *testing.T) {
+	fixture := newTransactionsRouterWithAuthFixture(t)
+	token := registerAndGetAccessToken(t, fixture.router, "txn-bulk-create-rollback@example.com")
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"type":          "expense",
+				"status":        "posted",
+				"amount":        "900.00",
+				"currency":      "RUB",
+				"accountFromId": "acc_main",
+				"categoryId":    "cat_food",
+			},
+			{
+				"type":          "transfer",
+				"status":        "planned",
+				"amount":        "100.00",
+				"currency":      "RUB",
+				"accountFromId": "acc_main",
+				"accountToId":   "acc_main",
+			},
+		},
+	}, headers)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status 422, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	listRec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/transactions", nil, headers)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", listRec.Code)
+	}
+	var listPayload paginatedEnvelope
+	decodeJSONResponse(t, listRec, &listPayload)
+	if listPayload.Pagination.Total != 0 {
+		t.Fatalf("expected no created transactions after failed bulk, got total=%d", listPayload.Pagination.Total)
+	}
+}
+
+func TestTransactionsBulkPatchAndConflictDetails(t *testing.T) {
+	fixture := newTransactionsRouterWithAuthFixture(t)
+	token := registerAndGetAccessToken(t, fixture.router, "txn-bulk-patch@example.com")
+	userID := userIDFromAuthFixture(t, fixture.auth, token)
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	fixture.service.mustSeed(t, transactionSeed{
+		UserID:         userID,
+		ID:             "txn_bp_1",
+		Type:           domaintransactions.TransactionTypeExpense,
+		Status:         domaintransactions.TransactionStatusPosted,
+		AmountMinor:    900_00,
+		OccurredAtDate: "2026-04-12",
+		AccountFromID:  "acc_main",
+		CategoryID:     "cat_food",
+		Comment:        "Old",
+	})
+	fixture.service.mustSeed(t, transactionSeed{
+		UserID:         userID,
+		ID:             "txn_bp_2",
+		Type:           domaintransactions.TransactionTypeTransfer,
+		Status:         domaintransactions.TransactionStatusPlanned,
+		AmountMinor:    500_00,
+		OccurredAtDate: "2026-04-20",
+		AccountFromID:  "acc_main",
+		AccountToID:    "acc_savings",
+	})
+
+	okRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"id":      "txn_bp_1",
+				"comment": "Updated groceries",
+			},
+			{
+				"id":     "txn_bp_2",
+				"status": "posted",
+			},
+		},
+	}, headers)
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", okRec.Code, okRec.Body.String())
+	}
+
+	conflictRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"id":      "txn_bp_1",
+				"comment": "Second update",
+			},
+			{
+				"id":     "txn_bp_1",
+				"amount": "1000.00",
+			},
+		},
+	}, headers)
+	if conflictRec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d, body=%s", conflictRec.Code, conflictRec.Body.String())
+	}
+	var conflictPayload structuredErrorResponse
+	decodeJSONResponse(t, conflictRec, &conflictPayload)
+	assertErrorDetailField(t, conflictPayload.Error.Details, "items[1].amount")
+
+	getRec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/transactions/txn_bp_1", nil, headers)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", getRec.Code)
+	}
+	var getPayload map[string]any
+	decodeJSONResponse(t, getRec, &getPayload)
+	if getPayload["comment"] != "Updated groceries" {
+		t.Fatalf("expected rollback of failed bulk patch, comment=%v", getPayload["comment"])
+	}
+}
+
 type transactionsRouterFixture struct {
 	router  http.Handler
 	auth    authEndpointsFixture
@@ -362,14 +545,16 @@ func newTransactionsRouterWithAuthFixture(t *testing.T) transactionsRouterFixtur
 
 	service := newTransactionUseCases()
 	catalogHandler := transporthttp.NewCatalogHandler(transporthttp.CatalogHandlerDeps{
-		TransactionsCreate:    service,
-		TransactionsGet:       service,
-		TransactionsList:      service,
-		TransactionsPatch:     service,
-		TransactionsDelete:    service,
-		TransactionsPost:      service,
-		TransactionsCancel:    service,
-		TransactionsDuplicate: service,
+		TransactionsCreate:     service,
+		TransactionsGet:        service,
+		TransactionsList:       service,
+		TransactionsPatch:      service,
+		TransactionsDelete:     service,
+		TransactionsPost:       service,
+		TransactionsCancel:     service,
+		TransactionsDuplicate:  service,
+		TransactionsBulkCreate: service,
+		TransactionsBulkPatch:  service,
 	})
 	authFixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		CatalogHandler: catalogHandler,
@@ -447,6 +632,30 @@ func (u *transactionUseCases) Create(_ context.Context, input appaccounting.Crea
 
 	u.transactions[transaction.ID()] = transaction
 	return transaction, nil
+}
+
+func (u *transactionUseCases) CreateBulk(
+	ctx context.Context,
+	input appaccounting.BulkCreateTransactionsInput,
+) ([]domaintransactions.Transaction, error) {
+	if len(input.Items) == 0 {
+		return nil, &appaccounting.BulkItemError{Index: 0, Field: "items", Err: fmt.Errorf("items must contain at least one item")}
+	}
+	if len(input.Items) > 100 {
+		return nil, &appaccounting.BulkItemError{Index: 0, Field: "items", Err: fmt.Errorf("items must not exceed 100")}
+	}
+
+	snapshot := copyTransactionMap(u.transactions)
+	created := make([]domaintransactions.Transaction, 0, len(input.Items))
+	for idx, item := range input.Items {
+		transaction, err := u.Create(ctx, item)
+		if err != nil {
+			u.transactions = snapshot
+			return nil, &appaccounting.BulkItemError{Index: idx, Field: "item", Err: err}
+		}
+		created = append(created, transaction)
+	}
+	return created, nil
 }
 
 func (u *transactionUseCases) GetByID(
@@ -627,6 +836,81 @@ func (u *transactionUseCases) Patch(
 		return domaintransactions.Transaction{}, err
 	}
 	u.transactions[updated.ID()] = updated
+	return updated, nil
+}
+
+func (u *transactionUseCases) PatchBulk(
+	ctx context.Context,
+	input appaccounting.BulkPatchTransactionsInput,
+) ([]domaintransactions.Transaction, error) {
+	if len(input.Items) == 0 {
+		return nil, &appaccounting.BulkItemError{Index: 0, Field: "items", Err: fmt.Errorf("items must contain at least one item")}
+	}
+	if len(input.Items) > 100 {
+		return nil, &appaccounting.BulkItemError{Index: 0, Field: "items", Err: fmt.Errorf("items must not exceed 100")}
+	}
+
+	snapshot := copyTransactionMap(u.transactions)
+	updated := make([]domaintransactions.Transaction, 0, len(input.Items))
+	for idx, item := range input.Items {
+		current, ok := u.transactions[item.TransactionID]
+		if !ok || current.UserID() != item.UserID {
+			u.transactions = snapshot
+			return nil, &appaccounting.BulkItemError{Index: idx, Field: "id", Err: appaccounting.ErrTransactionNotFound}
+		}
+
+		patchedInput := item
+		patchedInput.StatusSet = false
+		patchedInput.Status = nil
+		patched, patchErr := u.Patch(ctx, patchedInput)
+		if patchErr != nil {
+			u.transactions = snapshot
+			field := "item"
+			if item.AmountSet {
+				field = "amount"
+			} else if item.TypeSet {
+				field = "type"
+			} else if item.AccountFromIDSet {
+				field = "accountFromId"
+			} else if item.AccountToIDSet {
+				field = "accountToId"
+			} else if item.PlannedAtSet {
+				field = "plannedAt"
+			}
+			return nil, &appaccounting.BulkItemError{Index: idx, Field: field, Err: patchErr}
+		}
+
+		next := patched
+		if item.StatusSet {
+			if item.Status == nil {
+				u.transactions = snapshot
+				return nil, &appaccounting.BulkItemError{Index: idx, Field: "status", Err: appaccounting.ErrPostedTransactionPatchConflict}
+			}
+			switch *item.Status {
+			case domaintransactions.TransactionStatusPosted:
+				posted, err := u.PostByID(ctx, item.UserID, item.TransactionID)
+				if err != nil {
+					u.transactions = snapshot
+					return nil, &appaccounting.BulkItemError{Index: idx, Field: "status", Err: err}
+				}
+				next = posted
+			case domaintransactions.TransactionStatusCancelled:
+				cancelled, err := u.CancelByID(ctx, item.UserID, item.TransactionID)
+				if err != nil {
+					u.transactions = snapshot
+					return nil, &appaccounting.BulkItemError{Index: idx, Field: "status", Err: err}
+				}
+				next = cancelled
+			case domaintransactions.TransactionStatusPlanned:
+				if current.Status() != domaintransactions.TransactionStatusPlanned {
+					u.transactions = snapshot
+					return nil, &appaccounting.BulkItemError{Index: idx, Field: "status", Err: appaccounting.ErrPostedTransactionPatchConflict}
+				}
+			}
+		}
+		updated = append(updated, next)
+	}
+
 	return updated, nil
 }
 
@@ -1012,4 +1296,14 @@ func cloneString(value *string) *string {
 		return nil
 	}
 	return &cloned
+}
+
+func copyTransactionMap(
+	source map[shared.TransactionID]domaintransactions.Transaction,
+) map[shared.TransactionID]domaintransactions.Transaction {
+	cloned := make(map[shared.TransactionID]domaintransactions.Transaction, len(source))
+	for id, transaction := range source {
+		cloned[id] = transaction
+	}
+	return cloned
 }

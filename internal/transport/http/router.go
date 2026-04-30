@@ -92,6 +92,8 @@ func registerCatalogRoutes(routes gin.IRoutes, handler *CatalogHandler) {
 	routes.GET("/subcategories/:subcategoryId", handler.GetSubcategory)
 	routes.POST("/transactions", handler.CreateTransaction)
 	routes.GET("/transactions", handler.ListTransactions)
+	routes.POST("/transactions/bulk", handler.CreateTransactionsBulk)
+	routes.PATCH("/transactions/bulk", handler.PatchTransactionsBulk)
 	routes.GET("/transactions/:transactionId", handler.GetTransaction)
 	routes.PATCH("/transactions/:transactionId", handler.PatchTransaction)
 	routes.DELETE("/transactions/:transactionId", handler.DeleteTransaction)

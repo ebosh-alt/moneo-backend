@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,6 +76,36 @@ type duplicateTransactionRequest struct {
 	RecurringPaymentID optionalRawValue `json:"recurringPaymentId"`
 }
 
+type createTransactionsBulkRequest struct {
+	Items []createTransactionRequest `json:"items"`
+}
+
+type patchTransactionsBulkItemRequest struct {
+	ID            string          `json:"id"`
+	Type          optionalString  `json:"type"`
+	Status        optionalString  `json:"status"`
+	Amount        optionalDecimal `json:"amount"`
+	Currency      optionalString  `json:"currency"`
+	OccurredAt    optionalString  `json:"occurredAt"`
+	PlannedAt     optionalString  `json:"plannedAt"`
+	AccountFromID optionalString  `json:"accountFromId"`
+	AccountToID   optionalString  `json:"accountToId"`
+	CategoryID    optionalString  `json:"categoryId"`
+	SubcategoryID optionalString  `json:"subcategoryId"`
+	Comment       optionalString  `json:"comment"`
+
+	BudgetMemberID     optionalRawValue `json:"budgetMemberId"`
+	IncomeSourceID     optionalRawValue `json:"incomeSourceId"`
+	DebtID             optionalRawValue `json:"debtId"`
+	GoalID             optionalRawValue `json:"goalId"`
+	InvestmentID       optionalRawValue `json:"investmentId"`
+	RecurringPaymentID optionalRawValue `json:"recurringPaymentId"`
+}
+
+type patchTransactionsBulkRequest struct {
+	Items []patchTransactionsBulkItemRequest `json:"items"`
+}
+
 type transactionResponse struct {
 	ID                 string    `json:"id"`
 	Type               string    `json:"type"`
@@ -96,6 +127,10 @@ type transactionResponse struct {
 	Comment            *string   `json:"comment"`
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
+}
+
+type transactionItemsResponse struct {
+	Items []transactionResponse `json:"items"`
 }
 
 func (h *CatalogHandler) CreateTransaction(c *gin.Context) {
@@ -133,6 +168,48 @@ func (h *CatalogHandler) CreateTransaction(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, response)
+}
+
+func (h *CatalogHandler) CreateTransactionsBulk(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.transactionsBulkCreate == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	var req createTransactionsBulkRequest
+	if err := decodeStrictJSONBody(c, &req); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{Field: "body", Message: "request body is invalid"})
+		return
+	}
+
+	input, details := validateCreateTransactionsBulkRequest(user.ID, req)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	transactions, err := h.transactionsBulkCreate.CreateBulk(c.Request.Context(), input)
+	if err != nil {
+		writeTransactionBulkAppError(c, err)
+		return
+	}
+
+	items := make([]transactionResponse, 0, len(transactions))
+	for _, transaction := range transactions {
+		item, mapErr := toTransactionResponse(transaction)
+		if mapErr != nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusCreated, transactionItemsResponse{Items: items})
 }
 
 func (h *CatalogHandler) ListTransactions(c *gin.Context) {
@@ -261,6 +338,47 @@ func (h *CatalogHandler) PatchTransaction(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *CatalogHandler) PatchTransactionsBulk(c *gin.Context) {
+	user, ok := UserFromContext(c)
+	if !ok {
+		writeCatalogError(c, http.StatusUnauthorized, catalogErrorUnauthorized, "Unauthorized")
+		return
+	}
+	if h.transactionsBulkPatch == nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+
+	var req patchTransactionsBulkRequest
+	if err := decodeStrictJSONBody(c, &req); err != nil {
+		writeCatalogValidationError(c, catalogFieldError{Field: "body", Message: "request body is invalid"})
+		return
+	}
+
+	input, details := validatePatchTransactionsBulkRequest(user.ID, req)
+	if len(details) > 0 {
+		writeCatalogValidationError(c, details...)
+		return
+	}
+
+	transactions, err := h.transactionsBulkPatch.PatchBulk(c.Request.Context(), input)
+	if err != nil {
+		writeTransactionBulkAppError(c, err)
+		return
+	}
+
+	items := make([]transactionResponse, 0, len(transactions))
+	for _, transaction := range transactions {
+		item, mapErr := toTransactionResponse(transaction)
+		if mapErr != nil {
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+			return
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, transactionItemsResponse{Items: items})
 }
 
 func (h *CatalogHandler) DeleteTransaction(c *gin.Context) {
@@ -515,6 +633,40 @@ func validateCreateTransactionRequest(userID shared.UserID, req createTransactio
 	}, nil
 }
 
+func validateCreateTransactionsBulkRequest(
+	userID shared.UserID,
+	req createTransactionsBulkRequest,
+) (appaccounting.BulkCreateTransactionsInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 4)
+	if req.Items == nil {
+		details = append(details, catalogFieldError{Field: "items", Message: "items is required"})
+		return appaccounting.BulkCreateTransactionsInput{}, details
+	}
+	if len(req.Items) == 0 {
+		details = append(details, catalogFieldError{Field: "items", Message: "items must contain at least one item"})
+		return appaccounting.BulkCreateTransactionsInput{}, details
+	}
+	if len(req.Items) > 100 {
+		details = append(details, catalogFieldError{Field: "items", Message: "items must not exceed 100"})
+		return appaccounting.BulkCreateTransactionsInput{}, details
+	}
+
+	items := make([]appaccounting.CreateTransactionInput, 0, len(req.Items))
+	for idx, item := range req.Items {
+		input, itemDetails := validateCreateTransactionRequest(userID, item)
+		if len(itemDetails) > 0 {
+			details = append(details, prefixFieldErrors(idx, itemDetails)...)
+			continue
+		}
+		items = append(items, input)
+	}
+	if len(details) > 0 {
+		return appaccounting.BulkCreateTransactionsInput{}, details
+	}
+
+	return appaccounting.BulkCreateTransactionsInput{Items: items}, nil
+}
+
 func parseListTransactionsQuery(userID shared.UserID, c *gin.Context) (appaccounting.ListTransactionsQuery, []catalogFieldError) {
 	query := appaccounting.ListTransactionsQuery{
 		UserID: userID,
@@ -729,6 +881,70 @@ func validatePatchTransactionRequest(
 	return input, nil
 }
 
+func validatePatchTransactionsBulkRequest(
+	userID shared.UserID,
+	req patchTransactionsBulkRequest,
+) (appaccounting.BulkPatchTransactionsInput, []catalogFieldError) {
+	details := make([]catalogFieldError, 0, 4)
+	if req.Items == nil {
+		details = append(details, catalogFieldError{Field: "items", Message: "items is required"})
+		return appaccounting.BulkPatchTransactionsInput{}, details
+	}
+	if len(req.Items) == 0 {
+		details = append(details, catalogFieldError{Field: "items", Message: "items must contain at least one item"})
+		return appaccounting.BulkPatchTransactionsInput{}, details
+	}
+	if len(req.Items) > 100 {
+		details = append(details, catalogFieldError{Field: "items", Message: "items must not exceed 100"})
+		return appaccounting.BulkPatchTransactionsInput{}, details
+	}
+
+	items := make([]appaccounting.PatchTransactionInput, 0, len(req.Items))
+	for idx, item := range req.Items {
+		transactionIDRaw := strings.TrimSpace(item.ID)
+		if transactionIDRaw == "" {
+			details = append(details, catalogFieldError{Field: indexedItemField(idx, "id"), Message: "id is required"})
+			continue
+		}
+
+		patchReq := patchTransactionRequest{
+			Type:               item.Type,
+			Status:             item.Status,
+			Amount:             item.Amount,
+			Currency:           item.Currency,
+			OccurredAt:         item.OccurredAt,
+			PlannedAt:          item.PlannedAt,
+			AccountFromID:      item.AccountFromID,
+			AccountToID:        item.AccountToID,
+			CategoryID:         item.CategoryID,
+			SubcategoryID:      item.SubcategoryID,
+			Comment:            item.Comment,
+			BudgetMemberID:     item.BudgetMemberID,
+			IncomeSourceID:     item.IncomeSourceID,
+			DebtID:             item.DebtID,
+			GoalID:             item.GoalID,
+			InvestmentID:       item.InvestmentID,
+			RecurringPaymentID: item.RecurringPaymentID,
+		}
+
+		input, itemDetails := validatePatchTransactionRequest(
+			userID,
+			shared.TransactionID(transactionIDRaw),
+			patchReq,
+		)
+		if len(itemDetails) > 0 {
+			details = append(details, prefixFieldErrors(idx, itemDetails)...)
+			continue
+		}
+		items = append(items, input)
+	}
+	if len(details) > 0 {
+		return appaccounting.BulkPatchTransactionsInput{}, details
+	}
+
+	return appaccounting.BulkPatchTransactionsInput{Items: items}, nil
+}
+
 func validateDuplicateTransactionRequest(
 	userID shared.UserID,
 	transactionID shared.TransactionID,
@@ -856,6 +1072,48 @@ func writeTransactionAppError(c *gin.Context, err error) {
 	}
 }
 
+func writeTransactionBulkAppError(c *gin.Context, err error) {
+	var itemErr *appaccounting.BulkItemError
+	if errors.As(err, &itemErr) {
+		field := indexedItemField(itemErr.Index, itemErr.Field)
+		switch {
+		case errors.Is(itemErr.Err, appaccounting.ErrTransactionNotFound):
+			writeCatalogError(c, http.StatusNotFound, catalogErrorNotFound, "Resource not found", catalogFieldError{
+				Field:   field,
+				Message: "transaction not found",
+			})
+		case errors.Is(itemErr.Err, appaccounting.ErrConcurrentTransactionUpdate),
+			errors.Is(itemErr.Err, appaccounting.ErrTransactionAlreadyPosted),
+			errors.Is(itemErr.Err, appaccounting.ErrTransactionAlreadyCancelled),
+			errors.Is(itemErr.Err, appaccounting.ErrPostedTransactionPatchConflict),
+			errors.Is(itemErr.Err, appaccounting.ErrCancelledTransactionPatchConflict),
+			errors.Is(itemErr.Err, appaccounting.ErrPostedTransactionDeleteConflict):
+			writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Transaction cannot be updated", catalogFieldError{
+				Field:   field,
+				Message: bulkConflictMessage(itemErr),
+			})
+		case errors.Is(itemErr.Err, domaintransactions.ErrInvalidTransactionType),
+			errors.Is(itemErr.Err, domaintransactions.ErrInvalidTransactionStatus),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAmountMustBeNonNegative),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountFromRequired),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountToRequired),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountFromMustBeEmpty),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountToMustBeEmpty),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionCategoryRequired),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionTransferAccountsMustDiffer):
+			writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{
+				Field:   field,
+				Message: itemErr.Err.Error(),
+			})
+		default:
+			writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		}
+		return
+	}
+
+	writeTransactionAppError(c, err)
+}
+
 func validateOptionalEmptyBody(c *gin.Context) error {
 	if c.Request.Body == nil {
 		return nil
@@ -977,6 +1235,37 @@ func reservedRefNil(value *json.RawMessage) bool {
 		return true
 	}
 	return bytes.Equal(bytes.TrimSpace(*value), []byte("null"))
+}
+
+func indexedItemField(index int, field string) string {
+	normalized := strings.TrimSpace(field)
+	if normalized == "" {
+		return "items[" + strconv.Itoa(index) + "]"
+	}
+	return "items[" + strconv.Itoa(index) + "]." + normalized
+}
+
+func prefixFieldErrors(index int, details []catalogFieldError) []catalogFieldError {
+	prefixed := make([]catalogFieldError, 0, len(details))
+	for _, detail := range details {
+		prefixed = append(prefixed, catalogFieldError{
+			Field:   indexedItemField(index, detail.Field),
+			Message: detail.Message,
+		})
+	}
+	return prefixed
+}
+
+func bulkConflictMessage(itemErr *appaccounting.BulkItemError) string {
+	if itemErr == nil {
+		return "conflict"
+	}
+	switch itemErr.Field {
+	case "amount":
+		return "posted transaction amount cannot be changed; cancel and duplicate instead"
+	default:
+		return itemErr.Err.Error()
+	}
 }
 
 type optionalString struct {

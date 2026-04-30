@@ -132,6 +132,8 @@ func NewAPI(cfg Config) (*API, error) {
 	transactionPostService := appaccounting.NewPostTransactionService(transactionRepository, accountRepository, txManager, systemClock)
 	transactionCancelService := appaccounting.NewCancelTransactionService(transactionRepository, accountRepository, txManager, systemClock)
 	transactionDuplicateService := appaccounting.NewDuplicateTransactionService(transactionRepository, accountRepository, txManager, ids, systemClock)
+	transactionBulkCreateService := appaccounting.NewBulkCreateTransactionsService(transactionRepository, accountRepository, txManager, ids, systemClock)
+	transactionBulkPatchService := appaccounting.NewBulkPatchTransactionsService(transactionRepository, accountRepository, txManager, systemClock)
 
 	categoryRepository := postgres.NewCategoryRepository(pool)
 	subcategoryRepository := postgres.NewSubcategoryRepository(pool)
@@ -176,6 +178,8 @@ func NewAPI(cfg Config) (*API, error) {
 		TransactionsPost:            transactionPostService,
 		TransactionsCancel:          transactionCancelService,
 		TransactionsDuplicate:       transactionDuplicateService,
+		TransactionsBulkCreate:      transactionBulkCreateService,
+		TransactionsBulkPatch:       transactionBulkPatchService,
 	})
 	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
 		AuthMiddleware: authMiddleware,
