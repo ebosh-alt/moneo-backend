@@ -123,6 +123,17 @@ func NewAPI(cfg Config) (*API, error) {
 	accountArchiveService := appaccounting.NewArchiveAccountService(accountRepository, systemClock)
 	accountRestoreService := appaccounting.NewRestoreAccountService(accountRepository, systemClock)
 	accountUpdateService := appaccounting.NewUpdateAccountService(accountRepository, systemClock)
+	transactionRepository := postgres.NewTransactionRepository(pool)
+	transactionCreateService := appaccounting.NewCreateTransactionService(transactionRepository, accountRepository, txManager, ids, systemClock)
+	transactionGetService := appaccounting.NewGetTransactionService(transactionRepository)
+	transactionListService := appaccounting.NewListTransactionsService(transactionRepository)
+	transactionPatchService := appaccounting.NewPatchTransactionService(transactionRepository, txManager, systemClock)
+	transactionDeleteService := appaccounting.NewDeleteTransactionService(transactionRepository, accountRepository, txManager, systemClock)
+	transactionPostService := appaccounting.NewPostTransactionService(transactionRepository, accountRepository, txManager, systemClock)
+	transactionCancelService := appaccounting.NewCancelTransactionService(transactionRepository, accountRepository, txManager, systemClock)
+	transactionDuplicateService := appaccounting.NewDuplicateTransactionService(transactionRepository, accountRepository, txManager, ids, systemClock)
+	transactionBulkCreateService := appaccounting.NewBulkCreateTransactionsService(transactionRepository, accountRepository, txManager, ids, systemClock)
+	transactionBulkPatchService := appaccounting.NewBulkPatchTransactionsService(transactionRepository, accountRepository, txManager, systemClock)
 
 	categoryRepository := postgres.NewCategoryRepository(pool)
 	subcategoryRepository := postgres.NewSubcategoryRepository(pool)
@@ -159,6 +170,16 @@ func NewAPI(cfg Config) (*API, error) {
 		SubcategoriesRestore:        subcategoryRestoreService,
 		SubcategoriesGet:            subcategoryQueryService,
 		SubcategoriesList:           subcategoryQueryService,
+		TransactionsCreate:          transactionCreateService,
+		TransactionsGet:             transactionGetService,
+		TransactionsList:            transactionListService,
+		TransactionsPatch:           transactionPatchService,
+		TransactionsDelete:          transactionDeleteService,
+		TransactionsPost:            transactionPostService,
+		TransactionsCancel:          transactionCancelService,
+		TransactionsDuplicate:       transactionDuplicateService,
+		TransactionsBulkCreate:      transactionBulkCreateService,
+		TransactionsBulkPatch:       transactionBulkPatchService,
 	})
 	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
 		AuthMiddleware: authMiddleware,

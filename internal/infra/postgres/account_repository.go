@@ -202,12 +202,14 @@ func (r *AccountRepository) UpdateByID(
 UPDATE accounts
 SET name = $3,
     type = $4,
-    include_in_net_worth = $5,
-    include_in_daily_budget = $6,
-    updated_at = $7
+    balance_minor = $5,
+    initial_balance_minor = $6,
+    include_in_net_worth = $7,
+    include_in_daily_budget = $8,
+    updated_at = $9
 WHERE id = $1
   AND user_id = $2
-  AND updated_at = $8
+  AND updated_at = $10
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -218,6 +220,8 @@ WHERE id = $1
 		string(account.UserID()),
 		account.Name(),
 		string(account.Type()),
+		account.Balance().MinorUnits(),
+		account.InitialBalance().MinorUnits(),
 		account.IncludeInNetWorth(),
 		account.IncludeInDailyBudget(),
 		account.UpdatedAt(),

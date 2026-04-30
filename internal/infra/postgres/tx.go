@@ -18,6 +18,10 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 }
 
 func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if tx, ok := ctx.Value(txContextKey{}).(pgx.Tx); ok && tx != nil {
+		return fn(ctx)
+	}
+
 	tx, err := m.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
