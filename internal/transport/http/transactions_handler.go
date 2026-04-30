@@ -831,6 +831,7 @@ func validatePatchTransactionRequest(
 		}
 	}
 	if req.Currency.Set {
+		input.CurrencySet = true
 		if req.Currency.Value == nil || strings.TrimSpace(*req.Currency.Value) != "RUB" {
 			details = append(details, catalogFieldError{Field: "currency", Message: "currency must be RUB"})
 		}
@@ -1064,6 +1065,8 @@ func writeTransactionAppError(c *gin.Context, err error) {
 		errors.Is(err, domaintransactions.ErrTransactionAccountToRequired),
 		errors.Is(err, domaintransactions.ErrTransactionAccountFromMustBeEmpty),
 		errors.Is(err, domaintransactions.ErrTransactionAccountToMustBeEmpty),
+		errors.Is(err, domaintransactions.ErrTransactionCategoryMustBeEmpty),
+		errors.Is(err, domaintransactions.ErrTransactionSubcategoryMustBeEmpty),
 		errors.Is(err, domaintransactions.ErrTransactionCategoryRequired),
 		errors.Is(err, domaintransactions.ErrTransactionTransferAccountsMustDiffer):
 		writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation")
@@ -1099,6 +1102,8 @@ func writeTransactionBulkAppError(c *gin.Context, err error) {
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountToRequired),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountFromMustBeEmpty),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountToMustBeEmpty),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionCategoryMustBeEmpty),
+			errors.Is(itemErr.Err, domaintransactions.ErrTransactionSubcategoryMustBeEmpty),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionCategoryRequired),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionTransferAccountsMustDiffer):
 			writeCatalogError(c, http.StatusUnprocessableEntity, catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{

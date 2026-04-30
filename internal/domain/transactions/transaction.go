@@ -18,6 +18,8 @@ var (
 	ErrTransactionAccountToRequired          = errors.New("transaction account_to is required")
 	ErrTransactionAccountFromMustBeEmpty     = errors.New("transaction account_from must be empty")
 	ErrTransactionAccountToMustBeEmpty       = errors.New("transaction account_to must be empty")
+	ErrTransactionCategoryMustBeEmpty        = errors.New("transaction category must be empty")
+	ErrTransactionSubcategoryMustBeEmpty     = errors.New("transaction subcategory must be empty")
 	ErrTransactionCategoryRequired           = errors.New("transaction category is required")
 	ErrTransactionTransferAccountsMustDiffer = errors.New("transfer accounts must be different")
 	ErrTransactionAlreadyPosted              = errors.New("transaction is already posted")
@@ -98,7 +100,7 @@ func NewTransaction(params NewTransactionParams) (Transaction, error) {
 	if params.Amount.MinorUnits() < 0 {
 		return Transaction{}, ErrTransactionAmountMustBeNonNegative
 	}
-	if hasSubcategoryWithoutCategory(params.SubcategoryID, params.CategoryID) {
+	if params.Type != TransactionTypeTransfer && hasSubcategoryWithoutCategory(params.SubcategoryID, params.CategoryID) {
 		return Transaction{}, ErrTransactionCategoryRequired
 	}
 	if err := validateTypeInvariants(params); err != nil {
@@ -155,6 +157,12 @@ func validateTypeInvariants(params NewTransactionParams) error {
 		if normalizeID(*params.AccountFromID) == normalizeID(*params.AccountToID) {
 			return ErrTransactionTransferAccountsMustDiffer
 		}
+		if hasCategoryID(params.CategoryID) {
+			return ErrTransactionCategoryMustBeEmpty
+		}
+		if hasSubcategoryID(params.SubcategoryID) {
+			return ErrTransactionSubcategoryMustBeEmpty
+		}
 	case TransactionTypeInvestment, TransactionTypeSaving:
 		if !hasAccountID(params.AccountFromID) {
 			return ErrTransactionAccountFromRequired
@@ -162,8 +170,8 @@ func validateTypeInvariants(params NewTransactionParams) error {
 		if !hasCategoryID(params.CategoryID) {
 			return ErrTransactionCategoryRequired
 		}
-		if hasAccountID(params.AccountToID) && normalizeID(*params.AccountFromID) == normalizeID(*params.AccountToID) {
-			return ErrTransactionTransferAccountsMustDiffer
+		if hasAccountID(params.AccountToID) {
+			return ErrTransactionAccountToMustBeEmpty
 		}
 	default:
 		return ErrInvalidTransactionType
@@ -326,6 +334,10 @@ func hasCategoryID(value *shared.CategoryID) bool {
 
 func hasSubcategoryWithoutCategory(subcategoryID *shared.SubcategoryID, categoryID *shared.CategoryID) bool {
 	return subcategoryID != nil && strings.TrimSpace(string(*subcategoryID)) != "" && !hasCategoryID(categoryID)
+}
+
+func hasSubcategoryID(value *shared.SubcategoryID) bool {
+	return value != nil && strings.TrimSpace(string(*value)) != ""
 }
 
 func normalizeID[T ~string](value T) string {

@@ -125,6 +125,19 @@ func TestTransactionsCreateValidationAndBusinessRuleMapping(t *testing.T) {
 	if businessErr.Error.Code != "business_rule_violation" {
 		t.Fatalf("expected business_rule_violation code, got %q", businessErr.Error.Code)
 	}
+
+	savingRec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions", map[string]any{
+		"type":          "saving",
+		"status":        "planned",
+		"amount":        "100.00",
+		"currency":      "RUB",
+		"accountFromId": "acc_main",
+		"accountToId":   "acc_savings",
+		"categoryId":    "cat_food",
+	}, headers)
+	if savingRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status 422 for saving with accountToId, got %d, body=%s", savingRec.Code, savingRec.Body.String())
+	}
 }
 
 func TestTransactionsListFiltersAndPagination(t *testing.T) {
@@ -244,6 +257,13 @@ func TestTransactionsPatchRules(t *testing.T) {
 	}, headers)
 	if postedPatchForbiddenRec.Code != http.StatusConflict {
 		t.Fatalf("expected status 409, got %d, body=%s", postedPatchForbiddenRec.Code, postedPatchForbiddenRec.Body.String())
+	}
+
+	postedPatchCurrencyRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/txn_posted", map[string]any{
+		"currency": "RUB",
+	}, headers)
+	if postedPatchCurrencyRec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409 for posted currency mutation, got %d, body=%s", postedPatchCurrencyRec.Code, postedPatchCurrencyRec.Body.String())
 	}
 }
 
@@ -766,7 +786,7 @@ func (u *transactionUseCases) Patch(
 		return domaintransactions.Transaction{}, appaccounting.ErrCancelledTransactionPatchConflict
 	}
 	if current.Status() == domaintransactions.TransactionStatusPosted &&
-		(input.TypeSet || input.StatusSet || input.AmountSet || input.AccountFromIDSet || input.AccountToIDSet || input.IncomeSourceSet || input.PlannedAtSet) {
+		(input.TypeSet || input.StatusSet || input.AmountSet || input.CurrencySet || input.AccountFromIDSet || input.AccountToIDSet || input.IncomeSourceSet || input.PlannedAtSet) {
 		return domaintransactions.Transaction{}, appaccounting.ErrPostedTransactionPatchConflict
 	}
 
@@ -868,6 +888,8 @@ func (u *transactionUseCases) PatchBulk(
 			field := "item"
 			if item.AmountSet {
 				field = "amount"
+			} else if item.CurrencySet {
+				field = "currency"
 			} else if item.TypeSet {
 				field = "type"
 			} else if item.AccountFromIDSet {

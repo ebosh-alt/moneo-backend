@@ -248,6 +248,15 @@ func TestPatchPostedTransactionReturnsConflict(t *testing.T) {
 	if !errors.Is(err, ErrPostedTransactionPatchConflict) {
 		t.Fatalf("expected ErrPostedTransactionPatchConflict, got %v", err)
 	}
+
+	_, err = service.Patch(context.Background(), PatchTransactionInput{
+		UserID:        userID,
+		TransactionID: transaction.ID(),
+		CurrencySet:   true,
+	})
+	if !errors.Is(err, ErrPostedTransactionPatchConflict) {
+		t.Fatalf("expected ErrPostedTransactionPatchConflict on currency patch, got %v", err)
+	}
 }
 
 func TestDuplicateTransactionCreatesPlannedCopyWithoutBalanceAdjustment(t *testing.T) {

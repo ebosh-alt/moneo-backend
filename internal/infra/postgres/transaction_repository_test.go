@@ -237,6 +237,52 @@ func TestTransactionRepositoryDeleteByIDEnforcesOwnership(t *testing.T) {
 	}
 }
 
+func TestTransactionRepositoryCreateRejectsSubcategoryOutsideCategoryOrOwner(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetTransactionsFixtures(t, pool)
+
+	accountRepo := NewAccountRepository(pool)
+	categoryRepo := NewCategoryRepository(pool)
+	subcategoryRepo := NewSubcategoryRepository(pool)
+	repo := NewTransactionRepository(pool)
+	ctx := context.Background()
+
+	userA := insertAccountTestUser(t, pool, "tx-subcategory-user-a@example.com")
+	userB := insertAccountTestUser(t, pool, "tx-subcategory-user-b@example.com")
+
+	accountsA := createTransactionTestAccounts(t, ctx, accountRepo, userA)
+	categoriesA := createTransactionTestCategories(t, ctx, categoryRepo, userA)
+	categoriesB := createTransactionTestCategories(t, ctx, categoryRepo, userB)
+
+	subA := newSubcategoryFixture(t, subcategoryFixtureParams{
+		UserID:     userA,
+		CategoryID: categoriesA.expense,
+		Name:       "Groceries " + string(userA),
+		SortOrder:  10,
+	})
+	if err := subcategoryRepo.Create(ctx, subA); err != nil {
+		t.Fatalf("create subcategory for userA: %v", err)
+	}
+
+	now := time.Date(2026, 4, 30, 18, 0, 0, 0, time.UTC)
+	wrongCategory := newTransactionFixture(t, transactionFixtureParams{
+		ID:          shared.TransactionID("00000000-0000-0000-0000-000000000099"),
+		UserID:      userA,
+		Type:        domaintransactions.TransactionTypeExpense,
+		Status:      domaintransactions.TransactionStatusPlanned,
+		AmountMinor: 10_00,
+		AccountFrom: &accountsA.from,
+		CategoryID:  &categoriesB.expense,
+		Subcategory: func() *shared.SubcategoryID { v := subA.ID(); return &v }(),
+		OccurredAt:  ptrTime(now),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err := repo.Create(ctx, wrongCategory); err == nil {
+		t.Fatal("expected create error for subcategory outside category/owner")
+	}
+}
+
 func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 	pool := openPostgresForAccountRepoTests(t)
 	resetTransactionsFixtures(t, pool)

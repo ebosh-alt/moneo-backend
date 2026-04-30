@@ -215,12 +215,13 @@ type PatchTransactionInput struct {
 	UserID        shared.UserID
 	TransactionID shared.TransactionID
 
-	TypeSet   bool
-	Type      *domaintransactions.TransactionType
-	StatusSet bool
-	Status    *domaintransactions.TransactionStatus
-	AmountSet bool
-	Amount    *shared.Money
+	TypeSet     bool
+	Type        *domaintransactions.TransactionType
+	StatusSet   bool
+	Status      *domaintransactions.TransactionStatus
+	AmountSet   bool
+	Amount      *shared.Money
+	CurrencySet bool
 
 	AccountFromIDSet bool
 	AccountFromID    *shared.AccountID
@@ -285,6 +286,7 @@ func (s *PatchTransactionService) Patch(
 			if input.TypeSet ||
 				input.StatusSet ||
 				input.AmountSet ||
+				input.CurrencySet ||
 				input.AccountFromIDSet ||
 				input.AccountToIDSet ||
 				input.IncomeSourceSet ||
@@ -767,9 +769,6 @@ func transactionAccountDeltas(transaction domaintransactions.Transaction) (map[s
 			return nil, errors.New("saving/investment transaction has no account_from")
 		}
 		deltas[*transaction.AccountFromID()] -= amount
-		if transaction.AccountToID() != nil {
-			deltas[*transaction.AccountToID()] += amount
-		}
 	default:
 		return nil, fmt.Errorf("unsupported transaction type %q", transaction.Type())
 	}

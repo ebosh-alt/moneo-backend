@@ -223,6 +223,10 @@ func inferCreateField(err error) string {
 		return "accountToId"
 	case errors.Is(err, domaintransactions.ErrTransactionCategoryRequired):
 		return "categoryId"
+	case errors.Is(err, domaintransactions.ErrTransactionCategoryMustBeEmpty):
+		return "categoryId"
+	case errors.Is(err, domaintransactions.ErrTransactionSubcategoryMustBeEmpty):
+		return "subcategoryId"
 	case errors.Is(err, domaintransactions.ErrTransactionTransferAccountsMustDiffer):
 		return "accountToId"
 	case errors.Is(err, domaintransactions.ErrInvalidTransactionType):
@@ -245,6 +249,9 @@ func inferPatchField(input PatchTransactionInput, err error) string {
 	case errors.Is(err, ErrPostedTransactionPatchConflict):
 		if input.AmountSet {
 			return "amount"
+		}
+		if input.CurrencySet {
+			return "currency"
 		}
 		if input.TypeSet {
 			return "type"
@@ -272,6 +279,10 @@ func inferPatchField(input PatchTransactionInput, err error) string {
 		return "accountToId"
 	case errors.Is(err, domaintransactions.ErrTransactionCategoryRequired):
 		return "categoryId"
+	case errors.Is(err, domaintransactions.ErrTransactionCategoryMustBeEmpty):
+		return "categoryId"
+	case errors.Is(err, domaintransactions.ErrTransactionSubcategoryMustBeEmpty):
+		return "subcategoryId"
 	case errors.Is(err, domaintransactions.ErrTransactionTransferAccountsMustDiffer):
 		return "accountToId"
 	case errors.Is(err, ErrTransactionAlreadyPosted), errors.Is(err, ErrTransactionAlreadyCancelled):
