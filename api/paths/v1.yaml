@@ -1,6 +1,7 @@
 paths:
   /api/v1/accounts:
     post:
+      summary: POST operation
       tags: [Accounts]
       operationId: createAccount
       requestBody:
@@ -22,6 +23,7 @@ paths:
         '422': { $ref: '../schemas/components.yaml#/components/responses/BusinessRuleError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     get:
+      summary: GET operation
       tags: [Accounts]
       operationId: listAccounts
       parameters:
@@ -51,6 +53,7 @@ paths:
 
   /api/v1/accounts/summary:
     get:
+      summary: GET operation
       tags: [Accounts]
       operationId: getAccountsSummary
       parameters:
@@ -72,6 +75,7 @@ paths:
     parameters:
       - $ref: '../schemas/components.yaml#/components/parameters/AccountId'
     get:
+      summary: GET operation
       tags: [Accounts]
       operationId: getAccount
       responses:
@@ -85,6 +89,7 @@ paths:
         '404': { $ref: '../schemas/components.yaml#/components/responses/NotFoundError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     patch:
+      summary: PATCH operation
       tags: [Accounts]
       operationId: patchAccount
       requestBody:
@@ -106,6 +111,7 @@ paths:
 
   /api/v1/accounts/{accountId}/archive:
     post:
+      summary: POST operation
       tags: [Accounts]
       operationId: archiveAccount
       parameters:
@@ -122,6 +128,7 @@ paths:
 
   /api/v1/accounts/{accountId}/restore:
     post:
+      summary: POST operation
       tags: [Accounts]
       operationId: restoreAccount
       parameters:
@@ -139,6 +146,7 @@ paths:
 
   /api/v1/categories:
     post:
+      summary: POST operation
       tags: [Categories]
       operationId: createCategory
       requestBody:
@@ -157,6 +165,7 @@ paths:
         '409': { $ref: '../schemas/components.yaml#/components/responses/ConflictError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     get:
+      summary: GET operation
       tags: [Categories]
       operationId: listCategories
       parameters:
@@ -186,6 +195,7 @@ paths:
     parameters:
       - $ref: '../schemas/components.yaml#/components/parameters/CategoryId'
     get:
+      summary: GET operation
       tags: [Categories]
       operationId: getCategory
       parameters:
@@ -201,6 +211,7 @@ paths:
         '404': { $ref: '../schemas/components.yaml#/components/responses/NotFoundError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     patch:
+      summary: PATCH operation
       tags: [Categories]
       operationId: patchCategory
       requestBody:
@@ -220,6 +231,7 @@ paths:
         '409': { $ref: '../schemas/components.yaml#/components/responses/ConflictError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     delete:
+      summary: DELETE operation
       tags: [Categories]
       operationId: deleteCategory
       responses:
@@ -234,6 +246,7 @@ paths:
 
   /api/v1/categories/{categoryId}/restore:
     post:
+      summary: POST operation
       tags: [Categories]
       operationId: restoreCategory
       parameters:
@@ -253,6 +266,7 @@ paths:
     parameters:
       - $ref: '../schemas/components.yaml#/components/parameters/CategoryId'
     post:
+      summary: POST operation
       tags: [Subcategories]
       operationId: createSubcategory
       requestBody:
@@ -273,6 +287,7 @@ paths:
         '422': { $ref: '../schemas/components.yaml#/components/responses/BusinessRuleError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     get:
+      summary: GET operation
       tags: [Subcategories]
       operationId: listCategorySubcategories
       parameters:
@@ -292,6 +307,7 @@ paths:
 
   /api/v1/subcategories:
     get:
+      summary: GET operation
       tags: [Subcategories]
       operationId: listSubcategories
       parameters:
@@ -320,6 +336,7 @@ paths:
     parameters:
       - $ref: '../schemas/components.yaml#/components/parameters/SubcategoryId'
     get:
+      summary: GET operation
       tags: [Subcategories]
       operationId: getSubcategory
       responses:
@@ -333,6 +350,7 @@ paths:
         '404': { $ref: '../schemas/components.yaml#/components/responses/NotFoundError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     patch:
+      summary: PATCH operation
       tags: [Subcategories]
       operationId: patchSubcategory
       requestBody:
@@ -352,6 +370,7 @@ paths:
         '409': { $ref: '../schemas/components.yaml#/components/responses/ConflictError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     delete:
+      summary: DELETE operation
       tags: [Subcategories]
       operationId: deleteSubcategory
       responses:
@@ -366,6 +385,7 @@ paths:
 
   /api/v1/subcategories/{subcategoryId}/restore:
     post:
+      summary: POST operation
       tags: [Subcategories]
       operationId: restoreSubcategory
       parameters:
@@ -383,6 +403,7 @@ paths:
 
   /api/v1/transactions:
     post:
+      summary: POST operation
       tags: [Transactions]
       operationId: createTransaction
       requestBody:
@@ -403,6 +424,7 @@ paths:
         '422': { $ref: '../schemas/components.yaml#/components/responses/BusinessRuleError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     get:
+      summary: GET operation
       tags: [Transactions]
       operationId: listTransactions
       parameters:
@@ -456,6 +478,7 @@ paths:
 
   /api/v1/transactions/bulk:
     post:
+      summary: POST operation
       tags: [Transactions]
       operationId: createTransactionsBulk
       requestBody:
@@ -476,6 +499,7 @@ paths:
         '422': { $ref: '../schemas/components.yaml#/components/responses/BusinessRuleError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     patch:
+      summary: PATCH operation
       tags: [Transactions]
       operationId: patchTransactionsBulk
       requestBody:
@@ -500,6 +524,7 @@ paths:
     parameters:
       - $ref: '../schemas/components.yaml#/components/parameters/TransactionId'
     get:
+      summary: GET operation
       tags: [Transactions]
       operationId: getTransaction
       responses:
@@ -513,6 +538,7 @@ paths:
         '404': { $ref: '../schemas/components.yaml#/components/responses/NotFoundError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     patch:
+      summary: PATCH operation
       tags: [Transactions]
       operationId: patchTransaction
       requestBody:
@@ -533,6 +559,7 @@ paths:
         '422': { $ref: '../schemas/components.yaml#/components/responses/BusinessRuleError' }
         '500': { $ref: '../schemas/components.yaml#/components/responses/InternalError' }
     delete:
+      summary: DELETE operation
       tags: [Transactions]
       operationId: deleteTransaction
       responses:
@@ -545,6 +572,7 @@ paths:
 
   /api/v1/transactions/{transactionId}/post:
     post:
+      summary: POST operation
       tags: [Transactions]
       operationId: postTransaction
       parameters:
@@ -570,6 +598,7 @@ paths:
 
   /api/v1/transactions/{transactionId}/cancel:
     post:
+      summary: POST operation
       tags: [Transactions]
       operationId: cancelTransaction
       parameters:
@@ -595,6 +624,7 @@ paths:
 
   /api/v1/transactions/{transactionId}/duplicate:
     post:
+      summary: POST operation
       tags: [Transactions]
       operationId: duplicateTransaction
       parameters:

@@ -2,6 +2,9 @@ openapi: 3.0.3
 info:
   title: Moneo Backend API (as-is)
   version: 0.1.0
+  license:
+    name: Proprietary
+    url: https://example.com/license
   description: |
     Contract documents current behavior of catalogs and transactions endpoints as implemented.
     Includes both /api/v1 and legacy duplicate routes.
@@ -11,9 +14,13 @@ servers:
 
 tags:
   - name: Accounts
+    description: Accounts catalog endpoints.
   - name: Categories
+    description: Categories catalog endpoints.
   - name: Subcategories
+    description: Subcategories catalog endpoints.
   - name: Transactions
+    description: Transactions endpoints.
 
 security:
   - bearerAuth: []
