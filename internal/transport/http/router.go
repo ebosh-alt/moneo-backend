@@ -1,11 +1,16 @@
 package http
 
-import "github.com/gin-gonic/gin"
+import (
+	"moneo/internal/transport/http/generated"
+
+	"github.com/gin-gonic/gin"
+)
 
 type RouterOptions struct {
 	AuthMiddleware     gin.HandlerFunc
 	SecurityMiddleware gin.HandlerFunc
 	CatalogHandler     *CatalogHandler
+	StrictAPIHandler   generated.StrictServerInterface
 }
 
 func NewRouter(authHandler *AuthHandler, authMiddleware ...gin.HandlerFunc) *gin.Engine {
@@ -45,7 +50,10 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		protectedAuth.DELETE("/sessions/:sessionId", authHandler.RevokeSession)
 		protectedAuth.POST("/send-verification-email", authHandler.SendVerificationEmail)
 
-		if options.CatalogHandler != nil {
+		if options.StrictAPIHandler != nil {
+			protectedAPI := router.Group("/", options.AuthMiddleware)
+			generated.RegisterHandlers(protectedAPI, generated.NewStrictHandler(options.StrictAPIHandler, nil))
+		} else if options.CatalogHandler != nil {
 			apiV1 := router.Group("/api/v1", options.AuthMiddleware)
 			registerCatalogRoutes(apiV1, options.CatalogHandler)
 
@@ -58,7 +66,9 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		router.DELETE("/auth/sessions/:sessionId", authHandler.RevokeSession)
 		router.POST("/auth/send-verification-email", authHandler.SendVerificationEmail)
 
-		if options.CatalogHandler != nil {
+		if options.StrictAPIHandler != nil {
+			generated.RegisterHandlers(router, generated.NewStrictHandler(options.StrictAPIHandler, nil))
+		} else if options.CatalogHandler != nil {
 			apiV1 := router.Group("/api/v1")
 			registerCatalogRoutes(apiV1, options.CatalogHandler)
 
