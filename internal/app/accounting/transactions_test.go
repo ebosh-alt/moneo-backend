@@ -181,7 +181,7 @@ func TestCancelPostedExpenseRevertsBalance(t *testing.T) {
 	}
 }
 
-func TestDeletePostedTransactionRevertsBalance(t *testing.T) {
+func TestDeletePostedTransactionReturnsConflict(t *testing.T) {
 	now := time.Date(2026, 4, 30, 20, 30, 0, 0, time.UTC)
 	userID := shared.UserID("user-1")
 	toID := shared.AccountID("acc-to")
@@ -207,19 +207,14 @@ func TestDeletePostedTransactionRevertsBalance(t *testing.T) {
 	txm := &stubTxManager{}
 	service := NewDeleteTransactionService(repo, accounts, txm, fixedClock{now: now})
 
-	deleted, err := service.DeleteByID(context.Background(), userID, transaction.ID())
-	if err != nil {
-		t.Fatalf("delete posted transaction: %v", err)
+	_, err := service.DeleteByID(context.Background(), userID, transaction.ID())
+	if !errors.Is(err, ErrPostedTransactionDeleteConflict) {
+		t.Fatalf("expected ErrPostedTransactionDeleteConflict, got %v", err)
 	}
-	if deleted.ID() != transaction.ID() {
-		t.Fatalf("expected deleted id %q, got %q", transaction.ID(), deleted.ID())
-	}
-	if _, ok := repo.get(userID, transaction.ID()); ok {
-		t.Fatalf("expected transaction to be deleted")
-	}
+
 	updated := accounts.accounts[toID]
-	if updated.Balance().MinorUnits() != 1_000_00 {
-		t.Fatalf("expected reverted balance 100000, got %d", updated.Balance().MinorUnits())
+	if updated.Balance().MinorUnits() != 1_300_00 {
+		t.Fatalf("expected unchanged balance 130000, got %d", updated.Balance().MinorUnits())
 	}
 }
 
@@ -247,6 +242,7 @@ func TestPatchPostedTransactionReturnsConflict(t *testing.T) {
 	_, err := service.Patch(context.Background(), PatchTransactionInput{
 		UserID:        userID,
 		TransactionID: transaction.ID(),
+		AmountSet:     true,
 		Amount:        &newAmount,
 	})
 	if !errors.Is(err, ErrPostedTransactionPatchConflict) {
@@ -275,9 +271,17 @@ func TestDuplicateTransactionCreatesPlannedCopyWithoutBalanceAdjustment(t *testi
 	repo := newStubTransactionRepo()
 	repo.put(source)
 	idgen := &stubTransactionIDGen{next: []shared.TransactionID{"tx-8"}}
-	service := NewDuplicateTransactionService(repo, &stubTxManager{}, idgen, fixedClock{now: now})
+	accounts := &stubTransactionAccounts{
+		accounts: map[shared.AccountID]domainaccounting.Account{
+			fromID: mustAccount(t, userID, fromID, 1_000_00, now.Add(-48*time.Hour)),
+		},
+	}
+	service := NewDuplicateTransactionService(repo, accounts, &stubTxManager{}, idgen, fixedClock{now: now})
 
-	copyTx, err := service.DuplicateByID(context.Background(), userID, source.ID())
+	copyTx, err := service.DuplicateByID(context.Background(), DuplicateTransactionInput{
+		UserID:        userID,
+		TransactionID: source.ID(),
+	})
 	if err != nil {
 		t.Fatalf("duplicate transaction: %v", err)
 	}
@@ -287,8 +291,8 @@ func TestDuplicateTransactionCreatesPlannedCopyWithoutBalanceAdjustment(t *testi
 	if copyTx.Status() != domaintransactions.TransactionStatusPlanned {
 		t.Fatalf("expected planned status, got %s", copyTx.Status())
 	}
-	if copyTx.OccurredAt() != nil {
-		t.Fatalf("expected duplicated transaction without occurred_at")
+	if copyTx.OccurredAt() == nil {
+		t.Fatalf("expected duplicated transaction to inherit occurred_at")
 	}
 	if copyTx.PlannedAt() == nil {
 		t.Fatalf("expected duplicated transaction planned_at to be set")

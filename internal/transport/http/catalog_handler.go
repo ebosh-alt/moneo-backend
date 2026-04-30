@@ -14,6 +14,7 @@ import (
 	domainaccounting "moneo/internal/domain/accounting"
 	domaincatalog "moneo/internal/domain/catalog"
 	"moneo/internal/domain/shared"
+	domaintransactions "moneo/internal/domain/transactions"
 
 	"github.com/gin-gonic/gin"
 )
@@ -100,6 +101,38 @@ type SubcategoryRestoreUseCase interface {
 	Restore(ctx context.Context, userID shared.UserID, subcategoryID shared.SubcategoryID) (domaincatalog.Subcategory, error)
 }
 
+type TransactionCreateUseCase interface {
+	Create(ctx context.Context, input appaccounting.CreateTransactionInput) (domaintransactions.Transaction, error)
+}
+
+type TransactionGetUseCase interface {
+	GetByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) (domaintransactions.Transaction, error)
+}
+
+type TransactionListUseCase interface {
+	ListByUser(ctx context.Context, input appaccounting.ListTransactionsQuery) ([]domaintransactions.Transaction, error)
+}
+
+type TransactionPatchUseCase interface {
+	Patch(ctx context.Context, input appaccounting.PatchTransactionInput) (domaintransactions.Transaction, error)
+}
+
+type TransactionDeleteUseCase interface {
+	DeleteByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) (domaintransactions.Transaction, error)
+}
+
+type TransactionPostUseCase interface {
+	PostByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) (domaintransactions.Transaction, error)
+}
+
+type TransactionCancelUseCase interface {
+	CancelByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) (domaintransactions.Transaction, error)
+}
+
+type TransactionDuplicateUseCase interface {
+	DuplicateByID(ctx context.Context, input appaccounting.DuplicateTransactionInput) (domaintransactions.Transaction, error)
+}
+
 type CatalogHandler struct {
 	accountsCreate              AccountCreateUseCase
 	accountsGet                 AccountGetUseCase
@@ -121,6 +154,14 @@ type CatalogHandler struct {
 	subcategoriesRestore        SubcategoryRestoreUseCase
 	subcategoriesGet            SubcategoryGetUseCase
 	subcategoriesList           SubcategoryListUseCase
+	transactionsCreate          TransactionCreateUseCase
+	transactionsGet             TransactionGetUseCase
+	transactionsList            TransactionListUseCase
+	transactionsPatch           TransactionPatchUseCase
+	transactionsDelete          TransactionDeleteUseCase
+	transactionsPost            TransactionPostUseCase
+	transactionsCancel          TransactionCancelUseCase
+	transactionsDuplicate       TransactionDuplicateUseCase
 }
 
 type CatalogHandlerDeps struct {
@@ -144,6 +185,14 @@ type CatalogHandlerDeps struct {
 	SubcategoriesRestore        SubcategoryRestoreUseCase
 	SubcategoriesGet            SubcategoryGetUseCase
 	SubcategoriesList           SubcategoryListUseCase
+	TransactionsCreate          TransactionCreateUseCase
+	TransactionsGet             TransactionGetUseCase
+	TransactionsList            TransactionListUseCase
+	TransactionsPatch           TransactionPatchUseCase
+	TransactionsDelete          TransactionDeleteUseCase
+	TransactionsPost            TransactionPostUseCase
+	TransactionsCancel          TransactionCancelUseCase
+	TransactionsDuplicate       TransactionDuplicateUseCase
 }
 
 func NewCatalogHandler(deps CatalogHandlerDeps) *CatalogHandler {
@@ -168,6 +217,14 @@ func NewCatalogHandler(deps CatalogHandlerDeps) *CatalogHandler {
 		subcategoriesRestore:        deps.SubcategoriesRestore,
 		subcategoriesGet:            deps.SubcategoriesGet,
 		subcategoriesList:           deps.SubcategoriesList,
+		transactionsCreate:          deps.TransactionsCreate,
+		transactionsGet:             deps.TransactionsGet,
+		transactionsList:            deps.TransactionsList,
+		transactionsPatch:           deps.TransactionsPatch,
+		transactionsDelete:          deps.TransactionsDelete,
+		transactionsPost:            deps.TransactionsPost,
+		transactionsCancel:          deps.TransactionsCancel,
+		transactionsDuplicate:       deps.TransactionsDuplicate,
 	}
 }
 

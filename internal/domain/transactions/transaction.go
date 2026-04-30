@@ -53,6 +53,7 @@ type Transaction struct {
 	categoryID      *shared.CategoryID
 	subcategoryID   *shared.SubcategoryID
 	incomeSourceID  *shared.IncomeSourceID
+	comment         *string
 	occurredAt      *time.Time
 	plannedAt       *time.Time
 	postedAt        *time.Time
@@ -72,6 +73,7 @@ type NewTransactionParams struct {
 	CategoryID     *shared.CategoryID
 	SubcategoryID  *shared.SubcategoryID
 	IncomeSourceID *shared.IncomeSourceID
+	Comment        *string
 	OccurredAt     *time.Time
 	PlannedAt      *time.Time
 	PostedAt       *time.Time
@@ -114,6 +116,7 @@ func NewTransaction(params NewTransactionParams) (Transaction, error) {
 		categoryID:      cloneCategoryID(params.CategoryID),
 		subcategoryID:   cloneSubcategoryID(params.SubcategoryID),
 		incomeSourceID:  cloneIncomeSourceID(params.IncomeSourceID),
+		comment:         normalizeComment(params.Comment),
 		occurredAt:      cloneTime(params.OccurredAt),
 		plannedAt:       cloneTime(params.PlannedAt),
 		postedAt:        cloneTime(params.PostedAt),
@@ -281,6 +284,14 @@ func (t Transaction) IncomeSourceID() *shared.IncomeSourceID {
 	return cloneIncomeSourceID(t.incomeSourceID)
 }
 
+func (t Transaction) Comment() *string {
+	if t.comment == nil {
+		return nil
+	}
+	cloned := *t.comment
+	return &cloned
+}
+
 func (t Transaction) OccurredAt() *time.Time {
 	return cloneTime(t.occurredAt)
 }
@@ -358,5 +369,17 @@ func cloneTime(value *time.Time) *time.Time {
 		return nil
 	}
 	cloned := *value
+	return &cloned
+}
+
+func normalizeComment(comment *string) *string {
+	if comment == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*comment)
+	if trimmed == "" {
+		return nil
+	}
+	cloned := trimmed
 	return &cloned
 }

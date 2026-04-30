@@ -73,7 +73,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 		nil, // goal_id (reserved for MVP2)
 		nil, // investment_id (reserved for MVP2)
 		nil, // recurring_payment_id (reserved for MVP2)
-		nil, // comment (reserved for next app slice)
+		transaction.Comment(),
 		transaction.CreatedAt(),
 		transaction.UpdatedAt(),
 	); err != nil {
@@ -103,6 +103,7 @@ SELECT
 	category_id::text,
 	subcategory_id::text,
 	income_source_id::text,
+	comment,
 	created_at,
 	updated_at
 FROM transactions
@@ -142,6 +143,7 @@ SELECT
 	category_id::text,
 	subcategory_id::text,
 	income_source_id::text,
+	comment,
 	created_at,
 	updated_at
 FROM transactions
@@ -240,10 +242,11 @@ SET type = $3,
     category_id = $11,
     subcategory_id = $12,
     income_source_id = $13,
-    updated_at = $14
+    comment = $14,
+    updated_at = $15
 WHERE id = $1
   AND user_id = $2
-  AND updated_at = $15
+  AND updated_at = $16
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -263,6 +266,7 @@ WHERE id = $1
 		nullableCategoryID(transaction.CategoryID()),
 		nullableSubcategoryID(transaction.SubcategoryID()),
 		nullableIncomeSourceID(transaction.IncomeSourceID()),
+		transaction.Comment(),
 		transaction.UpdatedAt(),
 		expectedUpdatedAt,
 	)
@@ -350,6 +354,7 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		categoryID     *string
 		subcategoryID  *string
 		incomeSourceID *string
+		comment        *string
 		createdAt      time.Time
 		updatedAt      time.Time
 	)
@@ -368,6 +373,7 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		&categoryID,
 		&subcategoryID,
 		&incomeSourceID,
+		&comment,
 		&createdAt,
 		&updatedAt,
 	); err != nil {
@@ -404,6 +410,7 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		CategoryID:     category,
 		SubcategoryID:  subcategory,
 		IncomeSourceID: incomeSource,
+		Comment:        comment,
 		OccurredAt:     occurredAt,
 		PlannedAt:      plannedAt,
 		PostedAt:       occurredAt,

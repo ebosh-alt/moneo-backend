@@ -69,6 +69,7 @@ type CreateTransactionInput struct {
 	CategoryID     *shared.CategoryID
 	SubcategoryID  *shared.SubcategoryID
 	IncomeSourceID *shared.IncomeSourceID
+	Comment        *string
 	OccurredAt     *time.Time
 	PlannedAt      *time.Time
 }
@@ -127,6 +128,7 @@ func (s *CreateTransactionService) Create(
 		CategoryID:     cloneCategoryIDPtr(input.CategoryID),
 		SubcategoryID:  cloneSubcategoryIDPtr(input.SubcategoryID),
 		IncomeSourceID: cloneIncomeSourceIDPtr(input.IncomeSourceID),
+		Comment:        cloneStringPtr(input.Comment),
 		OccurredAt:     occurredAt,
 		PlannedAt:      cloneTimePtr(input.PlannedAt),
 		PostedAt:       postedAt,
@@ -210,17 +212,41 @@ func (s *ListTransactionsService) ListByUser(
 }
 
 type PatchTransactionInput struct {
-	UserID         shared.UserID
-	TransactionID  shared.TransactionID
-	Type           *domaintransactions.TransactionType
-	Amount         *shared.Money
-	AccountFromID  *shared.AccountID
-	AccountToID    *shared.AccountID
-	CategoryID     *shared.CategoryID
-	SubcategoryID  *shared.SubcategoryID
-	IncomeSourceID *shared.IncomeSourceID
-	OccurredAt     *time.Time
-	PlannedAt      *time.Time
+	UserID        shared.UserID
+	TransactionID shared.TransactionID
+
+	TypeSet   bool
+	Type      *domaintransactions.TransactionType
+	StatusSet bool
+	Status    *domaintransactions.TransactionStatus
+	AmountSet bool
+	Amount    *shared.Money
+
+	AccountFromIDSet bool
+	AccountFromID    *shared.AccountID
+	AccountToIDSet   bool
+	AccountToID      *shared.AccountID
+	CategoryIDSet    bool
+	CategoryID       *shared.CategoryID
+	SubcategoryIDSet bool
+	SubcategoryID    *shared.SubcategoryID
+	IncomeSourceSet  bool
+	IncomeSourceID   *shared.IncomeSourceID
+	CommentSet       bool
+	Comment          *string
+	OccurredAtSet    bool
+	OccurredAt       *time.Time
+	PlannedAtSet     bool
+	PlannedAt        *time.Time
+}
+
+type DuplicateTransactionInput struct {
+	UserID        shared.UserID
+	TransactionID shared.TransactionID
+	Status        *domaintransactions.TransactionStatus
+	OccurredAt    *time.Time
+	PlannedAt     *time.Time
+	Comment       *string
 }
 
 type PatchTransactionService struct {
@@ -251,47 +277,73 @@ func (s *PatchTransactionService) Patch(
 		if findErr != nil {
 			return fmt.Errorf("find transaction by id: %w", findErr)
 		}
-		if current.Status() == domaintransactions.TransactionStatusPosted {
-			return ErrPostedTransactionPatchConflict
-		}
 		if current.Status() == domaintransactions.TransactionStatusCancelled {
 			return ErrCancelledTransactionPatchConflict
 		}
 
+		if current.Status() == domaintransactions.TransactionStatusPosted {
+			if input.TypeSet ||
+				input.StatusSet ||
+				input.AmountSet ||
+				input.AccountFromIDSet ||
+				input.AccountToIDSet ||
+				input.IncomeSourceSet ||
+				input.PlannedAtSet {
+				return ErrPostedTransactionPatchConflict
+			}
+		}
+
 		nextType := current.Type()
-		if input.Type != nil {
+		if input.TypeSet {
+			if input.Type == nil {
+				return ErrPostedTransactionPatchConflict
+			}
 			nextType = *input.Type
 		}
+		nextStatus := current.Status()
+		if input.StatusSet {
+			if input.Status == nil {
+				return ErrPostedTransactionPatchConflict
+			}
+			nextStatus = *input.Status
+		}
 		nextAmount := current.Amount()
-		if input.Amount != nil {
+		if input.AmountSet {
+			if input.Amount == nil {
+				return ErrPostedTransactionPatchConflict
+			}
 			nextAmount = *input.Amount
 		}
 		nextAccountFromID := current.AccountFromID()
-		if input.AccountFromID != nil {
+		if input.AccountFromIDSet {
 			nextAccountFromID = cloneAccountIDPtr(input.AccountFromID)
 		}
 		nextAccountToID := current.AccountToID()
-		if input.AccountToID != nil {
+		if input.AccountToIDSet {
 			nextAccountToID = cloneAccountIDPtr(input.AccountToID)
 		}
 		nextCategoryID := current.CategoryID()
-		if input.CategoryID != nil {
+		if input.CategoryIDSet {
 			nextCategoryID = cloneCategoryIDPtr(input.CategoryID)
 		}
 		nextSubcategoryID := current.SubcategoryID()
-		if input.SubcategoryID != nil {
+		if input.SubcategoryIDSet {
 			nextSubcategoryID = cloneSubcategoryIDPtr(input.SubcategoryID)
 		}
 		nextIncomeSourceID := current.IncomeSourceID()
-		if input.IncomeSourceID != nil {
+		if input.IncomeSourceSet {
 			nextIncomeSourceID = cloneIncomeSourceIDPtr(input.IncomeSourceID)
 		}
+		nextComment := current.Comment()
+		if input.CommentSet {
+			nextComment = cloneStringPtr(input.Comment)
+		}
 		nextOccurredAt := current.OccurredAt()
-		if input.OccurredAt != nil {
+		if input.OccurredAtSet {
 			nextOccurredAt = cloneTimePtr(input.OccurredAt)
 		}
 		nextPlannedAt := current.PlannedAt()
-		if input.PlannedAt != nil {
+		if input.PlannedAtSet {
 			nextPlannedAt = cloneTimePtr(input.PlannedAt)
 		}
 
@@ -300,13 +352,14 @@ func (s *PatchTransactionService) Patch(
 			ID:             current.ID(),
 			UserID:         current.UserID(),
 			Type:           nextType,
-			Status:         current.Status(),
+			Status:         nextStatus,
 			Amount:         nextAmount,
 			AccountFromID:  nextAccountFromID,
 			AccountToID:    nextAccountToID,
 			CategoryID:     nextCategoryID,
 			SubcategoryID:  nextSubcategoryID,
 			IncomeSourceID: nextIncomeSourceID,
+			Comment:        nextComment,
 			OccurredAt:     nextOccurredAt,
 			PlannedAt:      nextPlannedAt,
 			PostedAt:       current.PostedAt(),
@@ -358,7 +411,6 @@ func (s *DeleteTransactionService) DeleteByID(
 	transactionID shared.TransactionID,
 ) (domaintransactions.Transaction, error) {
 	var deleted domaintransactions.Transaction
-	now := s.clock.Now().UTC()
 
 	err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
 		current, findErr := s.repo.FindByID(txCtx, userID, transactionID)
@@ -367,16 +419,7 @@ func (s *DeleteTransactionService) DeleteByID(
 		}
 
 		if current.Status() == domaintransactions.TransactionStatusPosted {
-			if applyErr := applyTransactionBalanceEffect(
-				txCtx,
-				s.accounts,
-				userID,
-				current,
-				-1,
-				now,
-			); applyErr != nil {
-				return applyErr
-			}
+			return ErrPostedTransactionDeleteConflict
 		}
 
 		if deleteErr := s.repo.DeleteByID(txCtx, userID, transactionID); deleteErr != nil {
@@ -517,65 +560,107 @@ func (s *CancelTransactionService) CancelByID(
 }
 
 type DuplicateTransactionService struct {
-	repo  TransactionRepository
-	txm   app.TxManager
-	idgen TransactionIDGenerator
-	clock AccountClock
+	repo     TransactionRepository
+	accounts TransactionAccountRepository
+	txm      app.TxManager
+	idgen    TransactionIDGenerator
+	clock    AccountClock
 }
 
 func NewDuplicateTransactionService(
 	repo TransactionRepository,
+	accounts TransactionAccountRepository,
 	txm app.TxManager,
 	idgen TransactionIDGenerator,
 	clock AccountClock,
 ) *DuplicateTransactionService {
 	return &DuplicateTransactionService{
-		repo:  repo,
-		txm:   txm,
-		idgen: idgen,
-		clock: clock,
+		repo:     repo,
+		accounts: accounts,
+		txm:      txm,
+		idgen:    idgen,
+		clock:    clock,
 	}
 }
 
 func (s *DuplicateTransactionService) DuplicateByID(
 	ctx context.Context,
-	userID shared.UserID,
-	transactionID shared.TransactionID,
+	input DuplicateTransactionInput,
 ) (domaintransactions.Transaction, error) {
 	now := s.clock.Now().UTC()
 	var duplicated domaintransactions.Transaction
 
 	err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
-		source, findErr := s.repo.FindByID(txCtx, userID, transactionID)
+		source, findErr := s.repo.FindByID(txCtx, input.UserID, input.TransactionID)
 		if findErr != nil {
 			return fmt.Errorf("find source transaction by id: %w", findErr)
 		}
 
-		plannedAt := source.PlannedAt()
-		if plannedAt == nil {
-			plannedAt = source.OccurredAt()
+		status := domaintransactions.TransactionStatusPlanned
+		if input.Status != nil {
+			status = *input.Status
+		}
+
+		occurredAt := cloneTimePtr(source.OccurredAt())
+		if input.OccurredAt != nil {
+			occurredAt = cloneTimePtr(input.OccurredAt)
+		}
+
+		plannedAt := cloneTimePtr(source.PlannedAt())
+		if input.PlannedAt != nil {
+			plannedAt = cloneTimePtr(input.PlannedAt)
+		}
+		if plannedAt == nil && occurredAt != nil {
+			plannedAt = cloneTimePtr(occurredAt)
+		}
+
+		comment := source.Comment()
+		if input.Comment != nil {
+			comment = cloneStringPtr(input.Comment)
+		}
+
+		postedAt := (*time.Time)(nil)
+		if status == domaintransactions.TransactionStatusPosted {
+			if occurredAt == nil {
+				occurredAt = &now
+			}
+			postedAt = cloneTimePtr(occurredAt)
 		}
 
 		copyTx, buildErr := domaintransactions.NewTransaction(domaintransactions.NewTransactionParams{
 			ID:             s.idgen.NewTransactionID(),
-			UserID:         userID,
+			UserID:         input.UserID,
 			Type:           source.Type(),
-			Status:         domaintransactions.TransactionStatusPlanned,
+			Status:         status,
 			Amount:         source.Amount(),
 			AccountFromID:  source.AccountFromID(),
 			AccountToID:    source.AccountToID(),
 			CategoryID:     source.CategoryID(),
 			SubcategoryID:  source.SubcategoryID(),
 			IncomeSourceID: source.IncomeSourceID(),
-			OccurredAt:     nil,
+			Comment:        comment,
+			OccurredAt:     occurredAt,
 			PlannedAt:      plannedAt,
-			PostedAt:       nil,
+			PostedAt:       postedAt,
 			CancelledAt:    nil,
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		})
 		if buildErr != nil {
 			return buildErr
+		}
+
+		if copyTx.Status() == domaintransactions.TransactionStatusPosted {
+			if applyErr := applyTransactionBalanceEffect(
+				txCtx,
+				s.accounts,
+				input.UserID,
+				copyTx,
+				1,
+				now,
+			); applyErr != nil {
+				return applyErr
+			}
 		}
 
 		if createErr := s.repo.Create(txCtx, copyTx); createErr != nil {
@@ -712,6 +797,7 @@ func transactionWithPostDate(
 		CategoryID:     transaction.CategoryID(),
 		SubcategoryID:  transaction.SubcategoryID(),
 		IncomeSourceID: transaction.IncomeSourceID(),
+		Comment:        transaction.Comment(),
 		OccurredAt:     occurredAt,
 		PlannedAt:      transaction.PlannedAt(),
 		PostedAt:       transaction.PostedAt(),
@@ -774,6 +860,17 @@ func cloneIncomeSourceIDPtr(value *shared.IncomeSourceID) *shared.IncomeSourceID
 		return nil
 	}
 	cloned := *value
+	return &cloned
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := strings.TrimSpace(*value)
+	if cloned == "" {
+		return nil
+	}
 	return &cloned
 }
 

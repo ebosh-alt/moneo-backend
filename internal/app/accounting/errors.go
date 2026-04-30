@@ -10,5 +10,6 @@ var (
 	ErrTransactionAlreadyPosted          = errors.New("transaction already posted")
 	ErrTransactionAlreadyCancelled       = errors.New("transaction already cancelled")
 	ErrPostedTransactionPatchConflict    = errors.New("posted transaction cannot be patched in mvp1")
+	ErrPostedTransactionDeleteConflict   = errors.New("posted transaction cannot be deleted in mvp1")
 	ErrCancelledTransactionPatchConflict = errors.New("cancelled transaction cannot be patched")
 )
