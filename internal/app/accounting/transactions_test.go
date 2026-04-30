@@ -259,6 +259,38 @@ func TestPatchPostedTransactionReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestPatchTransactionStatusReturnsConflict(t *testing.T) {
+	now := time.Date(2026, 4, 30, 21, 30, 0, 0, time.UTC)
+	userID := shared.UserID("user-1")
+	toID := shared.AccountID("acc-to")
+
+	transaction := mustTransaction(t, newTransactionFixtureInput{
+		ID:          "tx-6-status",
+		UserID:      userID,
+		Type:        domaintransactions.TransactionTypeIncome,
+		Status:      domaintransactions.TransactionStatusPlanned,
+		AmountMinor: 100_00,
+		AccountToID: &toID,
+		PlannedAt:   ptrTime(now.Add(time.Hour)),
+		CreatedAt:   now.Add(-time.Hour),
+		UpdatedAt:   now.Add(-time.Hour),
+	})
+	repo := newStubTransactionRepo()
+	repo.put(transaction)
+	service := NewPatchTransactionService(repo, &stubTxManager{}, fixedClock{now: now})
+	posted := domaintransactions.TransactionStatusPosted
+
+	_, err := service.Patch(context.Background(), PatchTransactionInput{
+		UserID:        userID,
+		TransactionID: transaction.ID(),
+		StatusSet:     true,
+		Status:        &posted,
+	})
+	if !errors.Is(err, ErrPostedTransactionPatchConflict) {
+		t.Fatalf("expected ErrPostedTransactionPatchConflict on status patch, got %v", err)
+	}
+}
+
 func TestDuplicateTransactionCreatesPlannedCopyWithoutBalanceAdjustment(t *testing.T) {
 	now := time.Date(2026, 4, 30, 22, 0, 0, 0, time.UTC)
 	userID := shared.UserID("user-1")
@@ -352,6 +384,14 @@ func (r *stubTransactionRepo) ListByUserID(_ context.Context, input ListTransact
 	return transactions, nil
 }
 
+func (r *stubTransactionRepo) CountByUserID(_ context.Context, input ListTransactionsQuery) (int, error) {
+	transactions, err := r.ListByUserID(context.Background(), input)
+	if err != nil {
+		return 0, err
+	}
+	return len(transactions), nil
+}
+
 func (r *stubTransactionRepo) UpdateByID(
 	_ context.Context,
 	transaction domaintransactions.Transaction,
@@ -372,13 +412,21 @@ func (r *stubTransactionRepo) DeleteByID(
 	_ context.Context,
 	userID shared.UserID,
 	transactionID shared.TransactionID,
+	expectedUpdatedAt time.Time,
 ) error {
 	userTransactions, ok := r.byUser[userID]
 	if !ok {
 		return ErrTransactionNotFound
 	}
-	if _, ok := userTransactions[transactionID]; !ok {
+	current, ok := userTransactions[transactionID]
+	if !ok {
 		return ErrTransactionNotFound
+	}
+	if !current.UpdatedAt().Equal(expectedUpdatedAt) {
+		return ErrConcurrentTransactionUpdate
+	}
+	if current.Status() == domaintransactions.TransactionStatusPosted {
+		return ErrPostedTransactionDeleteConflict
 	}
 	delete(userTransactions, transactionID)
 	return nil

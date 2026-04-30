@@ -228,7 +228,6 @@ func TestTransactionsPatchRules(t *testing.T) {
 
 	plannedPatchRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/txn_planned", map[string]any{
 		"type":          "transfer",
-		"status":        "planned",
 		"amount":        "5000.00",
 		"currency":      "RUB",
 		"occurredAt":    "2026-04-21",
@@ -264,6 +263,13 @@ func TestTransactionsPatchRules(t *testing.T) {
 	}, headers)
 	if postedPatchCurrencyRec.Code != http.StatusConflict {
 		t.Fatalf("expected status 409 for posted currency mutation, got %d, body=%s", postedPatchCurrencyRec.Code, postedPatchCurrencyRec.Body.String())
+	}
+
+	statusPatchRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/txn_planned", map[string]any{
+		"status": "posted",
+	}, headers)
+	if statusPatchRec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409 for status patch, got %d, body=%s", statusPatchRec.Code, statusPatchRec.Body.String())
 	}
 }
 
@@ -722,6 +728,18 @@ func (u *transactionUseCases) ListByUser(
 				continue
 			}
 		}
+		if input.EffectiveFrom != nil || input.EffectiveTo != nil {
+			effective := effectiveAt(transaction)
+			if effective == nil {
+				continue
+			}
+			if input.EffectiveFrom != nil && effective.Before(*input.EffectiveFrom) {
+				continue
+			}
+			if input.EffectiveTo != nil && effective.After(*input.EffectiveTo) {
+				continue
+			}
+		}
 		if input.OccurredFrom != nil || input.OccurredTo != nil {
 			occurredAt := transaction.OccurredAt()
 			if occurredAt == nil {
@@ -771,13 +789,41 @@ func (u *transactionUseCases) ListByUser(
 		return string(left.ID()) < string(right.ID())
 	})
 
+	if input.Offset > 0 {
+		if input.Offset >= len(items) {
+			return []domaintransactions.Transaction{}, nil
+		}
+		items = items[input.Offset:]
+	}
+	if input.Limit > 0 && input.Limit < len(items) {
+		items = items[:input.Limit]
+	}
+
 	return items, nil
+}
+
+func (u *transactionUseCases) CountByUser(
+	ctx context.Context,
+	input appaccounting.ListTransactionsQuery,
+) (int, error) {
+	noPagination := input
+	noPagination.Limit = 0
+	noPagination.Offset = 0
+	items, err := u.ListByUser(ctx, noPagination)
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
 }
 
 func (u *transactionUseCases) Patch(
 	_ context.Context,
 	input appaccounting.PatchTransactionInput,
 ) (domaintransactions.Transaction, error) {
+	if input.StatusSet {
+		return domaintransactions.Transaction{}, appaccounting.ErrPostedTransactionPatchConflict
+	}
+
 	current, ok := u.transactions[input.TransactionID]
 	if !ok || current.UserID() != input.UserID {
 		return domaintransactions.Transaction{}, appaccounting.ErrTransactionNotFound
@@ -795,9 +841,6 @@ func (u *transactionUseCases) Patch(
 		nextType = *input.Type
 	}
 	nextStatus := current.Status()
-	if input.StatusSet && input.Status != nil {
-		nextStatus = *input.Status
-	}
 	nextAmount := current.Amount()
 	if input.AmountSet && input.Amount != nil {
 		nextAmount = *input.Amount

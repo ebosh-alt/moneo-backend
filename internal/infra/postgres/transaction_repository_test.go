@@ -171,6 +171,78 @@ func TestTransactionRepositoryUpdateByIDDetectsConcurrentUpdate(t *testing.T) {
 	}
 }
 
+func TestTransactionRepositoryPersistsLifecycleTimestamps(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetTransactionsFixtures(t, pool)
+
+	accountRepo := NewAccountRepository(pool)
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewTransactionRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "tx-lifecycle@example.com")
+
+	accounts := createTransactionTestAccounts(t, ctx, accountRepo, userID)
+	categories := createTransactionTestCategories(t, ctx, categoryRepo, userID)
+
+	createdAt := time.Date(2026, 4, 30, 14, 0, 0, 0, time.UTC)
+	occurredAt := createdAt.Add(-24 * time.Hour)
+	postedAt := createdAt.Add(2 * time.Hour)
+	base := newTransactionFixture(t, transactionFixtureParams{
+		ID:          shared.TransactionID("00000000-0000-0000-0000-0000000000aa"),
+		UserID:      userID,
+		Type:        domaintransactions.TransactionTypeExpense,
+		Status:      domaintransactions.TransactionStatusPosted,
+		AmountMinor: 100_00,
+		AccountFrom: &accounts.from,
+		CategoryID:  &categories.expense,
+		OccurredAt:  ptrTime(occurredAt),
+		PostedAt:    ptrTime(postedAt),
+		CreatedAt:   createdAt,
+		UpdatedAt:   createdAt,
+	})
+	if err := repo.Create(ctx, base); err != nil {
+		t.Fatalf("create transaction: %v", err)
+	}
+
+	found, err := repo.FindByID(ctx, userID, base.ID())
+	if err != nil {
+		t.Fatalf("find transaction after create: %v", err)
+	}
+	if found.PostedAt() == nil || !found.PostedAt().Equal(postedAt) {
+		t.Fatalf("expected posted_at=%s, got %v", postedAt, found.PostedAt())
+	}
+	if found.CancelledAt() != nil {
+		t.Fatalf("expected cancelled_at=nil, got %v", found.CancelledAt())
+	}
+
+	cancelledAt := postedAt.Add(3 * time.Hour)
+	cancelled := newTransactionFixture(t, transactionFixtureParams{
+		ID:          found.ID(),
+		UserID:      found.UserID(),
+		Type:        found.Type(),
+		Status:      domaintransactions.TransactionStatusCancelled,
+		AmountMinor: found.Amount().MinorUnits(),
+		AccountFrom: found.AccountFromID(),
+		CategoryID:  found.CategoryID(),
+		OccurredAt:  found.OccurredAt(),
+		PostedAt:    found.PostedAt(),
+		CancelledAt: ptrTime(cancelledAt),
+		CreatedAt:   found.CreatedAt(),
+		UpdatedAt:   cancelledAt,
+	})
+	if err := repo.UpdateByID(ctx, cancelled, found.UpdatedAt()); err != nil {
+		t.Fatalf("update transaction to cancelled: %v", err)
+	}
+
+	foundCancelled, err := repo.FindByID(ctx, userID, base.ID())
+	if err != nil {
+		t.Fatalf("find cancelled transaction: %v", err)
+	}
+	if foundCancelled.CancelledAt() == nil || !foundCancelled.CancelledAt().Equal(cancelledAt) {
+		t.Fatalf("expected cancelled_at=%s, got %v", cancelledAt, foundCancelled.CancelledAt())
+	}
+}
+
 func TestTransactionRepositoryDeleteByIDEnforcesOwnership(t *testing.T) {
 	pool := openPostgresForAccountRepoTests(t)
 	resetTransactionsFixtures(t, pool)
@@ -192,11 +264,11 @@ func TestTransactionRepositoryDeleteByIDEnforcesOwnership(t *testing.T) {
 		ID:          shared.TransactionID("00000000-0000-0000-0000-000000000004"),
 		UserID:      userA,
 		Type:        domaintransactions.TransactionTypeExpense,
-		Status:      domaintransactions.TransactionStatusPosted,
+		Status:      domaintransactions.TransactionStatusPlanned,
 		AmountMinor: 10_00,
 		AccountFrom: &accountsA.from,
 		CategoryID:  &categoriesA.expense,
-		OccurredAt:  ptrTime(now),
+		PlannedAt:   ptrTime(now),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
@@ -204,11 +276,11 @@ func TestTransactionRepositoryDeleteByIDEnforcesOwnership(t *testing.T) {
 		ID:          shared.TransactionID("00000000-0000-0000-0000-000000000005"),
 		UserID:      userB,
 		Type:        domaintransactions.TransactionTypeExpense,
-		Status:      domaintransactions.TransactionStatusPosted,
+		Status:      domaintransactions.TransactionStatusPlanned,
 		AmountMinor: 20_00,
 		AccountFrom: &accountsB.from,
 		CategoryID:  &categoriesB.expense,
-		OccurredAt:  ptrTime(now),
+		PlannedAt:   ptrTime(now),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
@@ -219,21 +291,74 @@ func TestTransactionRepositoryDeleteByIDEnforcesOwnership(t *testing.T) {
 		t.Fatalf("create second transaction: %v", err)
 	}
 
-	if err := repo.DeleteByID(ctx, userA, first.ID()); err != nil {
+	if err := repo.DeleteByID(ctx, userA, first.ID(), first.UpdatedAt()); err != nil {
 		t.Fatalf("delete own transaction: %v", err)
 	}
-	err := repo.DeleteByID(ctx, userA, first.ID())
+	err := repo.DeleteByID(ctx, userA, first.ID(), first.UpdatedAt())
 	if !errors.Is(err, appaccounting.ErrTransactionNotFound) {
 		t.Fatalf("expected ErrTransactionNotFound for repeated delete, got %v", err)
 	}
 
-	err = repo.DeleteByID(ctx, userA, second.ID())
+	err = repo.DeleteByID(ctx, userA, second.ID(), second.UpdatedAt())
 	if !errors.Is(err, appaccounting.ErrTransactionNotFound) {
 		t.Fatalf("expected ErrTransactionNotFound for foreign delete, got %v", err)
 	}
 
 	if _, err := repo.FindByID(ctx, userB, second.ID()); err != nil {
 		t.Fatalf("expected second transaction to exist for owner, got %v", err)
+	}
+}
+
+func TestTransactionRepositoryDeleteByIDGuardsPostedAndStaleVersion(t *testing.T) {
+	pool := openPostgresForAccountRepoTests(t)
+	resetTransactionsFixtures(t, pool)
+
+	accountRepo := NewAccountRepository(pool)
+	categoryRepo := NewCategoryRepository(pool)
+	repo := NewTransactionRepository(pool)
+	ctx := context.Background()
+	userID := insertAccountTestUser(t, pool, "tx-delete-guards@example.com")
+	accounts := createTransactionTestAccounts(t, ctx, accountRepo, userID)
+	categories := createTransactionTestCategories(t, ctx, categoryRepo, userID)
+
+	now := time.Date(2026, 4, 30, 16, 0, 0, 0, time.UTC)
+	posted := newTransactionFixture(t, transactionFixtureParams{
+		ID:          shared.TransactionID("00000000-0000-0000-0000-0000000000ab"),
+		UserID:      userID,
+		Type:        domaintransactions.TransactionTypeExpense,
+		Status:      domaintransactions.TransactionStatusPosted,
+		AmountMinor: 20_00,
+		AccountFrom: &accounts.from,
+		CategoryID:  &categories.expense,
+		OccurredAt:  ptrTime(now),
+		PostedAt:    ptrTime(now),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err := repo.Create(ctx, posted); err != nil {
+		t.Fatalf("create posted transaction: %v", err)
+	}
+	if err := repo.DeleteByID(ctx, userID, posted.ID(), posted.UpdatedAt()); !errors.Is(err, appaccounting.ErrPostedTransactionDeleteConflict) {
+		t.Fatalf("expected ErrPostedTransactionDeleteConflict, got %v", err)
+	}
+
+	planned := newTransactionFixture(t, transactionFixtureParams{
+		ID:          shared.TransactionID("00000000-0000-0000-0000-0000000000ac"),
+		UserID:      userID,
+		Type:        domaintransactions.TransactionTypeExpense,
+		Status:      domaintransactions.TransactionStatusPlanned,
+		AmountMinor: 25_00,
+		AccountFrom: &accounts.from,
+		CategoryID:  &categories.expense,
+		PlannedAt:   ptrTime(now.Add(24 * time.Hour)),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err := repo.Create(ctx, planned); err != nil {
+		t.Fatalf("create planned transaction: %v", err)
+	}
+	if err := repo.DeleteByID(ctx, userID, planned.ID(), now.Add(time.Minute)); !errors.Is(err, appaccounting.ErrConcurrentTransactionUpdate) {
+		t.Fatalf("expected ErrConcurrentTransactionUpdate on stale delete, got %v", err)
 	}
 }
 
@@ -489,6 +614,8 @@ type transactionFixtureParams struct {
 	IncomeSource *shared.IncomeSourceID
 	OccurredAt   *time.Time
 	PlannedAt    *time.Time
+	PostedAt     *time.Time
+	CancelledAt  *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -507,6 +634,10 @@ func newTransactionFixture(t *testing.T, params transactionFixtureParams) domain
 	if params.AmountMinor == 0 {
 		params.AmountMinor = 1
 	}
+	postedAt := params.PostedAt
+	if postedAt == nil && params.Status == domaintransactions.TransactionStatusPosted {
+		postedAt = params.OccurredAt
+	}
 
 	transaction, err := domaintransactions.NewTransaction(domaintransactions.NewTransactionParams{
 		ID:             params.ID,
@@ -521,8 +652,8 @@ func newTransactionFixture(t *testing.T, params transactionFixtureParams) domain
 		IncomeSourceID: params.IncomeSource,
 		OccurredAt:     params.OccurredAt,
 		PlannedAt:      params.PlannedAt,
-		PostedAt:       params.OccurredAt,
-		CancelledAt:    nil,
+		PostedAt:       postedAt,
+		CancelledAt:    params.CancelledAt,
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 	})

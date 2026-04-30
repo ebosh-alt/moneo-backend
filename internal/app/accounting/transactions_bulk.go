@@ -57,7 +57,7 @@ func (s *BulkCreateTransactionsService) CreateBulk(
 	created := make([]domaintransactions.Transaction, 0, len(input.Items))
 	if err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
 		for idx, item := range input.Items {
-			transaction, createErr := s.create.Create(txCtx, item)
+			transaction, createErr := s.create.createInTx(txCtx, item)
 			if createErr != nil {
 				return &BulkItemError{
 					Index: idx,
@@ -149,7 +149,7 @@ func (s *BulkPatchTransactionsService) PatchBulk(
 				}
 				switch *item.Status {
 				case domaintransactions.TransactionStatusPosted:
-					posted, postErr := s.post.PostByID(txCtx, item.UserID, item.TransactionID)
+					posted, postErr := s.post.postInTx(txCtx, item.UserID, item.TransactionID)
 					if postErr != nil {
 						return &BulkItemError{
 							Index: idx,
@@ -159,7 +159,7 @@ func (s *BulkPatchTransactionsService) PatchBulk(
 					}
 					next = posted
 				case domaintransactions.TransactionStatusCancelled:
-					cancelled, cancelErr := s.cancel.CancelByID(txCtx, item.UserID, item.TransactionID)
+					cancelled, cancelErr := s.cancel.cancelInTx(txCtx, item.UserID, item.TransactionID)
 					if cancelErr != nil {
 						return &BulkItemError{
 							Index: idx,
@@ -187,7 +187,7 @@ func (s *BulkPatchTransactionsService) patchWithoutStatus(
 	withoutStatus := item
 	withoutStatus.StatusSet = false
 	withoutStatus.Status = nil
-	return s.patch.Patch(ctx, withoutStatus)
+	return s.patch.patchInTx(ctx, withoutStatus)
 }
 
 func validateBulkPatchStatusTransition(

@@ -234,8 +234,15 @@ func (h *CatalogHandler) ListTransactions(c *gin.Context) {
 		writeCatalogValidationError(c, details...)
 		return
 	}
+	query.Limit = limit
+	query.Offset = offset
 
 	transactions, err := h.transactionsList.ListByUser(c.Request.Context(), query)
+	if err != nil {
+		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
+		return
+	}
+	total, err := h.transactionsList.CountByUser(c.Request.Context(), query)
 	if err != nil {
 		writeCatalogError(c, http.StatusInternalServerError, catalogErrorInternal, "Internal error")
 		return
@@ -250,10 +257,8 @@ func (h *CatalogHandler) ListTransactions(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-
-	paged, total := paginate(items, limit, offset)
 	c.JSON(http.StatusOK, paginatedResponse[transactionResponse]{
-		Items: paged,
+		Items: items,
 		Pagination: paginationMeta{
 			Limit:  limit,
 			Offset: offset,
@@ -680,8 +685,8 @@ func parseListTransactionsQuery(userID shared.UserID, c *gin.Context) (appaccoun
 		} else {
 			from := monthStart.UTC()
 			to := from.AddDate(0, 1, 0).Add(-time.Nanosecond)
-			query.OccurredFrom = &from
-			query.OccurredTo = &to
+			query.EffectiveFrom = &from
+			query.EffectiveTo = &to
 		}
 	}
 	if rawFrom := strings.TrimSpace(c.Query("from")); rawFrom != "" {
@@ -690,7 +695,7 @@ func parseListTransactionsQuery(userID shared.UserID, c *gin.Context) (appaccoun
 			details = append(details, catalogFieldError{Field: "from", Message: "from must be YYYY-MM-DD"})
 		} else {
 			utc := from.UTC()
-			query.OccurredFrom = &utc
+			query.EffectiveFrom = &utc
 		}
 	}
 	if rawTo := strings.TrimSpace(c.Query("to")); rawTo != "" {
@@ -699,7 +704,7 @@ func parseListTransactionsQuery(userID shared.UserID, c *gin.Context) (appaccoun
 			details = append(details, catalogFieldError{Field: "to", Message: "to must be YYYY-MM-DD"})
 		} else {
 			utc := to.UTC().Add(24*time.Hour - time.Nanosecond)
-			query.OccurredTo = &utc
+			query.EffectiveTo = &utc
 		}
 	}
 
@@ -742,10 +747,14 @@ func parseListTransactionsQuery(userID shared.UserID, c *gin.Context) (appaccoun
 			query.Sort = appaccounting.TransactionsSortEffectiveAtAsc
 		case "createdAt:desc":
 			query.Sort = appaccounting.TransactionsSortCreatedAtDesc
+		case "createdAt:asc":
+			query.Sort = appaccounting.TransactionsSortCreatedAtAsc
 		case "amount:desc":
 			query.Sort = appaccounting.TransactionsSortAmountDesc
+		case "amount:asc":
+			query.Sort = appaccounting.TransactionsSortAmountAsc
 		default:
-			details = append(details, catalogFieldError{Field: "sort", Message: "sort must be one of: occurredAt:desc, occurredAt:asc, createdAt:desc, amount:desc"})
+			details = append(details, catalogFieldError{Field: "sort", Message: "sort must be one of: occurredAt:desc, occurredAt:asc, createdAt:desc, createdAt:asc, amount:desc, amount:asc"})
 		}
 	}
 
@@ -1058,7 +1067,8 @@ func writeTransactionAppError(c *gin.Context, err error) {
 		errors.Is(err, appaccounting.ErrCancelledTransactionPatchConflict),
 		errors.Is(err, appaccounting.ErrPostedTransactionDeleteConflict):
 		writeCatalogError(c, http.StatusConflict, catalogErrorConflict, "Conflict")
-	case errors.Is(err, domaintransactions.ErrInvalidTransactionType),
+	case errors.Is(err, appaccounting.ErrAccountNotFound),
+		errors.Is(err, domaintransactions.ErrInvalidTransactionType),
 		errors.Is(err, domaintransactions.ErrInvalidTransactionStatus),
 		errors.Is(err, domaintransactions.ErrTransactionAmountMustBeNonNegative),
 		errors.Is(err, domaintransactions.ErrTransactionAccountFromRequired),
@@ -1095,7 +1105,8 @@ func writeTransactionBulkAppError(c *gin.Context, err error) {
 				Field:   field,
 				Message: bulkConflictMessage(itemErr),
 			})
-		case errors.Is(itemErr.Err, domaintransactions.ErrInvalidTransactionType),
+		case errors.Is(itemErr.Err, appaccounting.ErrAccountNotFound),
+			errors.Is(itemErr.Err, domaintransactions.ErrInvalidTransactionType),
 			errors.Is(itemErr.Err, domaintransactions.ErrInvalidTransactionStatus),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAmountMustBeNonNegative),
 			errors.Is(itemErr.Err, domaintransactions.ErrTransactionAccountFromRequired),

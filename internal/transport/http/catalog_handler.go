@@ -111,6 +111,7 @@ type TransactionGetUseCase interface {
 
 type TransactionListUseCase interface {
 	ListByUser(ctx context.Context, input appaccounting.ListTransactionsQuery) ([]domaintransactions.Transaction, error)
+	CountByUser(ctx context.Context, input appaccounting.ListTransactionsQuery) (int, error)
 }
 
 type TransactionPatchUseCase interface {

@@ -22,8 +22,9 @@ type TransactionRepository interface {
 	Create(ctx context.Context, transaction domaintransactions.Transaction) error
 	FindByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) (domaintransactions.Transaction, error)
 	ListByUserID(ctx context.Context, input ListTransactionsQuery) ([]domaintransactions.Transaction, error)
+	CountByUserID(ctx context.Context, input ListTransactionsQuery) (int, error)
 	UpdateByID(ctx context.Context, transaction domaintransactions.Transaction, expectedUpdatedAt time.Time) error
-	DeleteByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID) error
+	DeleteByID(ctx context.Context, userID shared.UserID, transactionID shared.TransactionID, expectedUpdatedAt time.Time) error
 }
 
 type TransactionAccountRepository interface {
@@ -38,6 +39,8 @@ type ListTransactionsQuery struct {
 	AccountID     *shared.AccountID
 	CategoryID    *shared.CategoryID
 	SubcategoryID *shared.SubcategoryID
+	EffectiveFrom *time.Time
+	EffectiveTo   *time.Time
 	OccurredFrom  *time.Time
 	OccurredTo    *time.Time
 	PlannedFrom   *time.Time
@@ -102,6 +105,24 @@ func (s *CreateTransactionService) Create(
 	ctx context.Context,
 	input CreateTransactionInput,
 ) (domaintransactions.Transaction, error) {
+	var created domaintransactions.Transaction
+	if err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
+		transaction, createErr := s.createInTx(txCtx, input)
+		if createErr != nil {
+			return createErr
+		}
+		created = transaction
+		return nil
+	}); err != nil {
+		return domaintransactions.Transaction{}, err
+	}
+	return created, nil
+}
+
+func (s *CreateTransactionService) createInTx(
+	ctx context.Context,
+	input CreateTransactionInput,
+) (domaintransactions.Transaction, error) {
 	now := s.clock.Now().UTC()
 	status := input.Status
 	if status == "" {
@@ -140,28 +161,22 @@ func (s *CreateTransactionService) Create(
 		return domaintransactions.Transaction{}, err
 	}
 
-	if err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
-		if transaction.Status() == domaintransactions.TransactionStatusPosted {
-			if applyErr := applyTransactionBalanceEffect(
-				txCtx,
-				s.accounts,
-				transaction.UserID(),
-				transaction,
-				1,
-				now,
-			); applyErr != nil {
-				return applyErr
-			}
+	if transaction.Status() == domaintransactions.TransactionStatusPosted {
+		if applyErr := applyTransactionBalanceEffect(
+			ctx,
+			s.accounts,
+			transaction.UserID(),
+			transaction,
+			1,
+			now,
+		); applyErr != nil {
+			return domaintransactions.Transaction{}, applyErr
 		}
-
-		if createErr := s.repo.Create(txCtx, transaction); createErr != nil {
-			return fmt.Errorf("create transaction: %w", createErr)
-		}
-		return nil
-	}); err != nil {
-		return domaintransactions.Transaction{}, err
 	}
 
+	if createErr := s.repo.Create(ctx, transaction); createErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("create transaction: %w", createErr)
+	}
 	return transaction, nil
 }
 
@@ -209,6 +224,18 @@ func (s *ListTransactionsService) ListByUser(
 		return nil, fmt.Errorf("list transactions by user id: %w", err)
 	}
 	return transactions, nil
+}
+
+func (s *ListTransactionsService) CountByUser(
+	ctx context.Context,
+	input ListTransactionsQuery,
+) (int, error) {
+	input.Search = normalizeSearchValue(input.Search)
+	total, err := s.repo.CountByUserID(ctx, input)
+	if err != nil {
+		return 0, fmt.Errorf("count transactions by user id: %w", err)
+	}
+	return total, nil
 }
 
 type PatchTransactionInput struct {
@@ -272,109 +299,15 @@ func (s *PatchTransactionService) Patch(
 	ctx context.Context,
 	input PatchTransactionInput,
 ) (domaintransactions.Transaction, error) {
+	if input.StatusSet {
+		return domaintransactions.Transaction{}, ErrPostedTransactionPatchConflict
+	}
+
 	var patched domaintransactions.Transaction
 	err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
-		current, findErr := s.repo.FindByID(txCtx, input.UserID, input.TransactionID)
-		if findErr != nil {
-			return fmt.Errorf("find transaction by id: %w", findErr)
-		}
-		if current.Status() == domaintransactions.TransactionStatusCancelled {
-			return ErrCancelledTransactionPatchConflict
-		}
-
-		if current.Status() == domaintransactions.TransactionStatusPosted {
-			if input.TypeSet ||
-				input.StatusSet ||
-				input.AmountSet ||
-				input.CurrencySet ||
-				input.AccountFromIDSet ||
-				input.AccountToIDSet ||
-				input.IncomeSourceSet ||
-				input.PlannedAtSet {
-				return ErrPostedTransactionPatchConflict
-			}
-		}
-
-		nextType := current.Type()
-		if input.TypeSet {
-			if input.Type == nil {
-				return ErrPostedTransactionPatchConflict
-			}
-			nextType = *input.Type
-		}
-		nextStatus := current.Status()
-		if input.StatusSet {
-			if input.Status == nil {
-				return ErrPostedTransactionPatchConflict
-			}
-			nextStatus = *input.Status
-		}
-		nextAmount := current.Amount()
-		if input.AmountSet {
-			if input.Amount == nil {
-				return ErrPostedTransactionPatchConflict
-			}
-			nextAmount = *input.Amount
-		}
-		nextAccountFromID := current.AccountFromID()
-		if input.AccountFromIDSet {
-			nextAccountFromID = cloneAccountIDPtr(input.AccountFromID)
-		}
-		nextAccountToID := current.AccountToID()
-		if input.AccountToIDSet {
-			nextAccountToID = cloneAccountIDPtr(input.AccountToID)
-		}
-		nextCategoryID := current.CategoryID()
-		if input.CategoryIDSet {
-			nextCategoryID = cloneCategoryIDPtr(input.CategoryID)
-		}
-		nextSubcategoryID := current.SubcategoryID()
-		if input.SubcategoryIDSet {
-			nextSubcategoryID = cloneSubcategoryIDPtr(input.SubcategoryID)
-		}
-		nextIncomeSourceID := current.IncomeSourceID()
-		if input.IncomeSourceSet {
-			nextIncomeSourceID = cloneIncomeSourceIDPtr(input.IncomeSourceID)
-		}
-		nextComment := current.Comment()
-		if input.CommentSet {
-			nextComment = cloneStringPtr(input.Comment)
-		}
-		nextOccurredAt := current.OccurredAt()
-		if input.OccurredAtSet {
-			nextOccurredAt = cloneTimePtr(input.OccurredAt)
-		}
-		nextPlannedAt := current.PlannedAt()
-		if input.PlannedAtSet {
-			nextPlannedAt = cloneTimePtr(input.PlannedAt)
-		}
-
-		updatedAt := s.clock.Now().UTC()
-		next, buildErr := domaintransactions.NewTransaction(domaintransactions.NewTransactionParams{
-			ID:             current.ID(),
-			UserID:         current.UserID(),
-			Type:           nextType,
-			Status:         nextStatus,
-			Amount:         nextAmount,
-			AccountFromID:  nextAccountFromID,
-			AccountToID:    nextAccountToID,
-			CategoryID:     nextCategoryID,
-			SubcategoryID:  nextSubcategoryID,
-			IncomeSourceID: nextIncomeSourceID,
-			Comment:        nextComment,
-			OccurredAt:     nextOccurredAt,
-			PlannedAt:      nextPlannedAt,
-			PostedAt:       current.PostedAt(),
-			CancelledAt:    current.CancelledAt(),
-			CreatedAt:      current.CreatedAt(),
-			UpdatedAt:      updatedAt,
-		})
-		if buildErr != nil {
-			return buildErr
-		}
-
-		if updateErr := s.repo.UpdateByID(txCtx, next, current.UpdatedAt()); updateErr != nil {
-			return fmt.Errorf("update transaction by id: %w", updateErr)
+		next, patchErr := s.patchInTx(txCtx, input)
+		if patchErr != nil {
+			return patchErr
 		}
 		patched = next
 		return nil
@@ -384,6 +317,109 @@ func (s *PatchTransactionService) Patch(
 	}
 
 	return patched, nil
+}
+
+func (s *PatchTransactionService) patchInTx(
+	ctx context.Context,
+	input PatchTransactionInput,
+) (domaintransactions.Transaction, error) {
+	current, findErr := s.repo.FindByID(ctx, input.UserID, input.TransactionID)
+	if findErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("find transaction by id: %w", findErr)
+	}
+	if current.Status() == domaintransactions.TransactionStatusCancelled {
+		return domaintransactions.Transaction{}, ErrCancelledTransactionPatchConflict
+	}
+
+	if current.Status() == domaintransactions.TransactionStatusPosted {
+		if input.TypeSet ||
+			input.StatusSet ||
+			input.AmountSet ||
+			input.CurrencySet ||
+			input.AccountFromIDSet ||
+			input.AccountToIDSet ||
+			input.IncomeSourceSet ||
+			input.PlannedAtSet {
+			return domaintransactions.Transaction{}, ErrPostedTransactionPatchConflict
+		}
+	}
+
+	nextType := current.Type()
+	if input.TypeSet {
+		if input.Type == nil {
+			return domaintransactions.Transaction{}, ErrPostedTransactionPatchConflict
+		}
+		nextType = *input.Type
+	}
+	nextStatus := current.Status()
+	nextAmount := current.Amount()
+	if input.AmountSet {
+		if input.Amount == nil {
+			return domaintransactions.Transaction{}, ErrPostedTransactionPatchConflict
+		}
+		nextAmount = *input.Amount
+	}
+	nextAccountFromID := current.AccountFromID()
+	if input.AccountFromIDSet {
+		nextAccountFromID = cloneAccountIDPtr(input.AccountFromID)
+	}
+	nextAccountToID := current.AccountToID()
+	if input.AccountToIDSet {
+		nextAccountToID = cloneAccountIDPtr(input.AccountToID)
+	}
+	nextCategoryID := current.CategoryID()
+	if input.CategoryIDSet {
+		nextCategoryID = cloneCategoryIDPtr(input.CategoryID)
+	}
+	nextSubcategoryID := current.SubcategoryID()
+	if input.SubcategoryIDSet {
+		nextSubcategoryID = cloneSubcategoryIDPtr(input.SubcategoryID)
+	}
+	nextIncomeSourceID := current.IncomeSourceID()
+	if input.IncomeSourceSet {
+		nextIncomeSourceID = cloneIncomeSourceIDPtr(input.IncomeSourceID)
+	}
+	nextComment := current.Comment()
+	if input.CommentSet {
+		nextComment = cloneStringPtr(input.Comment)
+	}
+	nextOccurredAt := current.OccurredAt()
+	if input.OccurredAtSet {
+		nextOccurredAt = cloneTimePtr(input.OccurredAt)
+	}
+	nextPlannedAt := current.PlannedAt()
+	if input.PlannedAtSet {
+		nextPlannedAt = cloneTimePtr(input.PlannedAt)
+	}
+
+	updatedAt := s.clock.Now().UTC()
+	next, buildErr := domaintransactions.NewTransaction(domaintransactions.NewTransactionParams{
+		ID:             current.ID(),
+		UserID:         current.UserID(),
+		Type:           nextType,
+		Status:         nextStatus,
+		Amount:         nextAmount,
+		AccountFromID:  nextAccountFromID,
+		AccountToID:    nextAccountToID,
+		CategoryID:     nextCategoryID,
+		SubcategoryID:  nextSubcategoryID,
+		IncomeSourceID: nextIncomeSourceID,
+		Comment:        nextComment,
+		OccurredAt:     nextOccurredAt,
+		PlannedAt:      nextPlannedAt,
+		PostedAt:       current.PostedAt(),
+		CancelledAt:    current.CancelledAt(),
+		CreatedAt:      current.CreatedAt(),
+		UpdatedAt:      updatedAt,
+	})
+	if buildErr != nil {
+		return domaintransactions.Transaction{}, buildErr
+	}
+
+	if updateErr := s.repo.UpdateByID(ctx, next, current.UpdatedAt()); updateErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("update transaction by id: %w", updateErr)
+	}
+	return next, nil
 }
 
 type DeleteTransactionService struct {
@@ -424,7 +460,7 @@ func (s *DeleteTransactionService) DeleteByID(
 			return ErrPostedTransactionDeleteConflict
 		}
 
-		if deleteErr := s.repo.DeleteByID(txCtx, userID, transactionID); deleteErr != nil {
+		if deleteErr := s.repo.DeleteByID(txCtx, userID, transactionID, current.UpdatedAt()); deleteErr != nil {
 			return fmt.Errorf("delete transaction by id: %w", deleteErr)
 		}
 
@@ -464,33 +500,14 @@ func (s *PostTransactionService) PostByID(
 	userID shared.UserID,
 	transactionID shared.TransactionID,
 ) (domaintransactions.Transaction, error) {
-	now := s.clock.Now().UTC()
 	var posted domaintransactions.Transaction
 
 	err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
-		current, findErr := s.repo.FindByID(txCtx, userID, transactionID)
-		if findErr != nil {
-			return fmt.Errorf("find transaction by id: %w", findErr)
+		transaction, postErr := s.postInTx(txCtx, userID, transactionID)
+		if postErr != nil {
+			return postErr
 		}
-
-		candidate, buildErr := transactionWithPostDate(current, now)
-		if buildErr != nil {
-			return buildErr
-		}
-
-		if postErr := (&candidate).Post(now); postErr != nil {
-			return mapTransactionStatusError(postErr)
-		}
-
-		if applyErr := applyTransactionBalanceEffect(txCtx, s.accounts, userID, candidate, 1, now); applyErr != nil {
-			return applyErr
-		}
-
-		if updateErr := s.repo.UpdateByID(txCtx, candidate, current.UpdatedAt()); updateErr != nil {
-			return fmt.Errorf("update transaction by id: %w", updateErr)
-		}
-
-		posted = candidate
+		posted = transaction
 		return nil
 	})
 	if err != nil {
@@ -498,6 +515,35 @@ func (s *PostTransactionService) PostByID(
 	}
 
 	return posted, nil
+}
+
+func (s *PostTransactionService) postInTx(
+	ctx context.Context,
+	userID shared.UserID,
+	transactionID shared.TransactionID,
+) (domaintransactions.Transaction, error) {
+	now := s.clock.Now().UTC()
+	current, findErr := s.repo.FindByID(ctx, userID, transactionID)
+	if findErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("find transaction by id: %w", findErr)
+	}
+
+	candidate, buildErr := transactionWithPostDate(current, now)
+	if buildErr != nil {
+		return domaintransactions.Transaction{}, buildErr
+	}
+
+	if postErr := (&candidate).Post(now); postErr != nil {
+		return domaintransactions.Transaction{}, mapTransactionStatusError(postErr)
+	}
+
+	if updateErr := s.repo.UpdateByID(ctx, candidate, current.UpdatedAt()); updateErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("update transaction by id: %w", updateErr)
+	}
+	if applyErr := applyTransactionBalanceEffect(ctx, s.accounts, userID, candidate, 1, now); applyErr != nil {
+		return domaintransactions.Transaction{}, applyErr
+	}
+	return candidate, nil
 }
 
 type CancelTransactionService struct {
@@ -526,32 +572,14 @@ func (s *CancelTransactionService) CancelByID(
 	userID shared.UserID,
 	transactionID shared.TransactionID,
 ) (domaintransactions.Transaction, error) {
-	now := s.clock.Now().UTC()
 	var cancelled domaintransactions.Transaction
 
 	err := s.txm.WithinTx(ctx, func(txCtx context.Context) error {
-		current, findErr := s.repo.FindByID(txCtx, userID, transactionID)
-		if findErr != nil {
-			return fmt.Errorf("find transaction by id: %w", findErr)
+		transaction, cancelErr := s.cancelInTx(txCtx, userID, transactionID)
+		if cancelErr != nil {
+			return cancelErr
 		}
-
-		candidate := current
-		wasPosted := current.Status() == domaintransactions.TransactionStatusPosted
-		if cancelErr := (&candidate).Cancel(now); cancelErr != nil {
-			return mapTransactionStatusError(cancelErr)
-		}
-
-		if wasPosted {
-			if applyErr := applyTransactionBalanceEffect(txCtx, s.accounts, userID, current, -1, now); applyErr != nil {
-				return applyErr
-			}
-		}
-
-		if updateErr := s.repo.UpdateByID(txCtx, candidate, current.UpdatedAt()); updateErr != nil {
-			return fmt.Errorf("update transaction by id: %w", updateErr)
-		}
-
-		cancelled = candidate
+		cancelled = transaction
 		return nil
 	})
 	if err != nil {
@@ -559,6 +587,34 @@ func (s *CancelTransactionService) CancelByID(
 	}
 
 	return cancelled, nil
+}
+
+func (s *CancelTransactionService) cancelInTx(
+	ctx context.Context,
+	userID shared.UserID,
+	transactionID shared.TransactionID,
+) (domaintransactions.Transaction, error) {
+	now := s.clock.Now().UTC()
+	current, findErr := s.repo.FindByID(ctx, userID, transactionID)
+	if findErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("find transaction by id: %w", findErr)
+	}
+
+	candidate := current
+	wasPosted := current.Status() == domaintransactions.TransactionStatusPosted
+	if cancelErr := (&candidate).Cancel(now); cancelErr != nil {
+		return domaintransactions.Transaction{}, mapTransactionStatusError(cancelErr)
+	}
+
+	if updateErr := s.repo.UpdateByID(ctx, candidate, current.UpdatedAt()); updateErr != nil {
+		return domaintransactions.Transaction{}, fmt.Errorf("update transaction by id: %w", updateErr)
+	}
+	if wasPosted {
+		if applyErr := applyTransactionBalanceEffect(ctx, s.accounts, userID, current, -1, now); applyErr != nil {
+			return domaintransactions.Transaction{}, applyErr
+		}
+	}
+	return candidate, nil
 }
 
 type DuplicateTransactionService struct {

@@ -339,9 +339,47 @@ func (r *integratedTransactionRepo) ListByUserID(
 				continue
 			}
 		}
+		if input.EffectiveFrom != nil || input.EffectiveTo != nil {
+			effective := transaction.OccurredAt()
+			if effective == nil {
+				effective = transaction.PlannedAt()
+			}
+			if effective == nil {
+				continue
+			}
+			if input.EffectiveFrom != nil && effective.Before(*input.EffectiveFrom) {
+				continue
+			}
+			if input.EffectiveTo != nil && effective.After(*input.EffectiveTo) {
+				continue
+			}
+		}
 		transactions = append(transactions, transaction)
 	}
+	if input.Offset > 0 {
+		if input.Offset >= len(transactions) {
+			return []domaintransactions.Transaction{}, nil
+		}
+		transactions = transactions[input.Offset:]
+	}
+	if input.Limit > 0 && input.Limit < len(transactions) {
+		transactions = transactions[:input.Limit]
+	}
 	return transactions, nil
+}
+
+func (r *integratedTransactionRepo) CountByUserID(
+	_ context.Context,
+	input appaccounting.ListTransactionsQuery,
+) (int, error) {
+	noPagination := input
+	noPagination.Limit = 0
+	noPagination.Offset = 0
+	transactions, err := r.ListByUserID(context.Background(), noPagination)
+	if err != nil {
+		return 0, err
+	}
+	return len(transactions), nil
 }
 
 func (r *integratedTransactionRepo) UpdateByID(
@@ -364,10 +402,17 @@ func (r *integratedTransactionRepo) DeleteByID(
 	_ context.Context,
 	userID shared.UserID,
 	transactionID shared.TransactionID,
+	expectedUpdatedAt time.Time,
 ) error {
 	current, ok := r.transactions[transactionID]
 	if !ok || current.UserID() != userID {
 		return appaccounting.ErrTransactionNotFound
+	}
+	if !current.UpdatedAt().Equal(expectedUpdatedAt) {
+		return appaccounting.ErrConcurrentTransactionUpdate
+	}
+	if current.Status() == domaintransactions.TransactionStatusPosted {
+		return appaccounting.ErrPostedTransactionDeleteConflict
 	}
 	delete(r.transactions, transactionID)
 	return nil

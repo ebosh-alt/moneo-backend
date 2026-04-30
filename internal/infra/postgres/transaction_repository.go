@@ -45,10 +45,12 @@ INSERT INTO transactions (
 	investment_id,
 	recurring_payment_id,
 	comment,
+	posted_at,
+	cancelled_at,
 	created_at,
 	updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -74,6 +76,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 		nil, // investment_id (reserved for MVP2)
 		nil, // recurring_payment_id (reserved for MVP2)
 		transaction.Comment(),
+		transaction.PostedAt(),
+		transaction.CancelledAt(),
 		transaction.CreatedAt(),
 		transaction.UpdatedAt(),
 	); err != nil {
@@ -104,6 +108,8 @@ SELECT
 	subcategory_id::text,
 	income_source_id::text,
 	comment,
+	posted_at,
+	cancelled_at,
 	created_at,
 	updated_at
 FROM transactions
@@ -144,6 +150,8 @@ SELECT
 	subcategory_id::text,
 	income_source_id::text,
 	comment,
+	posted_at,
+	cancelled_at,
 	created_at,
 	updated_at
 FROM transactions
@@ -151,46 +159,7 @@ WHERE user_id = $1
 `
 
 	args := []any{string(input.UserID)}
-	if input.Type != nil {
-		query += fmt.Sprintf("  AND type = $%d\n", len(args)+1)
-		args = append(args, string(*input.Type))
-	}
-	if input.Status != nil {
-		query += fmt.Sprintf("  AND status = $%d\n", len(args)+1)
-		args = append(args, string(*input.Status))
-	}
-	if input.AccountID != nil {
-		query += fmt.Sprintf("  AND (account_from_id = $%d OR account_to_id = $%d)\n", len(args)+1, len(args)+1)
-		args = append(args, string(*input.AccountID))
-	}
-	if input.CategoryID != nil {
-		query += fmt.Sprintf("  AND category_id = $%d\n", len(args)+1)
-		args = append(args, string(*input.CategoryID))
-	}
-	if input.SubcategoryID != nil {
-		query += fmt.Sprintf("  AND subcategory_id = $%d\n", len(args)+1)
-		args = append(args, string(*input.SubcategoryID))
-	}
-	if input.OccurredFrom != nil {
-		query += fmt.Sprintf("  AND occurred_at >= $%d\n", len(args)+1)
-		args = append(args, *input.OccurredFrom)
-	}
-	if input.OccurredTo != nil {
-		query += fmt.Sprintf("  AND occurred_at <= $%d\n", len(args)+1)
-		args = append(args, *input.OccurredTo)
-	}
-	if input.PlannedFrom != nil {
-		query += fmt.Sprintf("  AND planned_at >= $%d\n", len(args)+1)
-		args = append(args, *input.PlannedFrom)
-	}
-	if input.PlannedTo != nil {
-		query += fmt.Sprintf("  AND planned_at <= $%d\n", len(args)+1)
-		args = append(args, *input.PlannedTo)
-	}
-	if input.Search != nil && strings.TrimSpace(*input.Search) != "" {
-		query += fmt.Sprintf("  AND lower(COALESCE(comment, '')) LIKE $%d\n", len(args)+1)
-		args = append(args, "%"+strings.ToLower(strings.TrimSpace(*input.Search))+"%")
-	}
+	query, args = appendTransactionListFilters(query, args, input)
 
 	query += "ORDER BY " + listSortExpression(input.Sort) + ", id\n"
 	if input.Limit > 0 {
@@ -224,6 +193,26 @@ WHERE user_id = $1
 	return transactions, nil
 }
 
+func (r *TransactionRepository) CountByUserID(
+	ctx context.Context,
+	input appaccounting.ListTransactionsQuery,
+) (int, error) {
+	query := `
+SELECT COUNT(*)
+FROM transactions
+WHERE user_id = $1
+`
+	args := []any{string(input.UserID)}
+	query, args = appendTransactionListFilters(query, args, input)
+
+	db := databaseFromContext(ctx, r.pool)
+	var total int
+	if err := db.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count transactions by user id: %w", err)
+	}
+	return total, nil
+}
+
 func (r *TransactionRepository) UpdateByID(
 	ctx context.Context,
 	transaction domaintransactions.Transaction,
@@ -231,22 +220,24 @@ func (r *TransactionRepository) UpdateByID(
 ) error {
 	const query = `
 UPDATE transactions
-SET type = $3,
-    status = $4,
-    amount_minor = $5,
-    currency = $6,
-    occurred_at = $7,
-    planned_at = $8,
-    account_from_id = $9,
-    account_to_id = $10,
-    category_id = $11,
-    subcategory_id = $12,
-    income_source_id = $13,
-    comment = $14,
-    updated_at = $15
+	SET type = $3,
+	    status = $4,
+	    amount_minor = $5,
+	    currency = $6,
+	    occurred_at = $7,
+	    planned_at = $8,
+	    posted_at = $9,
+	    cancelled_at = $10,
+	    account_from_id = $11,
+	    account_to_id = $12,
+	    category_id = $13,
+	    subcategory_id = $14,
+	    income_source_id = $15,
+	    comment = $16,
+	    updated_at = $17
 WHERE id = $1
   AND user_id = $2
-  AND updated_at = $16
+  AND updated_at = $18
 `
 
 	db := databaseFromContext(ctx, r.pool)
@@ -261,6 +252,8 @@ WHERE id = $1
 		transaction.Amount().Currency().String(),
 		transaction.OccurredAt(),
 		transaction.PlannedAt(),
+		transaction.PostedAt(),
+		transaction.CancelledAt(),
 		nullableAccountID(transaction.AccountFromID()),
 		nullableAccountID(transaction.AccountToID()),
 		nullableCategoryID(transaction.CategoryID()),
@@ -291,20 +284,33 @@ func (r *TransactionRepository) DeleteByID(
 	ctx context.Context,
 	userID shared.UserID,
 	transactionID shared.TransactionID,
+	expectedUpdatedAt time.Time,
 ) error {
 	const query = `
 DELETE FROM transactions
 WHERE id = $1
   AND user_id = $2
+  AND updated_at = $3
+  AND status <> 'posted'
 `
 
 	db := databaseFromContext(ctx, r.pool)
-	commandTag, err := db.Exec(ctx, query, string(transactionID), string(userID))
+	commandTag, err := db.Exec(ctx, query, string(transactionID), string(userID), expectedUpdatedAt)
 	if err != nil {
 		return fmt.Errorf("delete transaction by id: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
-		return appaccounting.ErrTransactionNotFound
+		status, resolveErr := r.statusByID(ctx, userID, transactionID)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if status == nil {
+			return appaccounting.ErrTransactionNotFound
+		}
+		if *status == domaintransactions.TransactionStatusPosted {
+			return appaccounting.ErrPostedTransactionDeleteConflict
+		}
+		return appaccounting.ErrConcurrentTransactionUpdate
 	}
 
 	return nil
@@ -335,6 +341,34 @@ LIMIT 1
 	return true, nil
 }
 
+func (r *TransactionRepository) statusByID(
+	ctx context.Context,
+	userID shared.UserID,
+	transactionID shared.TransactionID,
+) (*domaintransactions.TransactionStatus, error) {
+	const query = `
+SELECT status
+FROM transactions
+WHERE id = $1
+  AND user_id = $2
+LIMIT 1
+`
+
+	db := databaseFromContext(ctx, r.pool)
+	var rawStatus string
+	if err := db.QueryRow(ctx, query, string(transactionID), string(userID)).Scan(&rawStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("resolve transaction status: %w", err)
+	}
+	status, err := domaintransactions.ParseTransactionStatus(strings.TrimSpace(rawStatus))
+	if err != nil {
+		return nil, fmt.Errorf("parse transaction status %q: %w", rawStatus, err)
+	}
+	return &status, nil
+}
+
 type transactionScanner interface {
 	Scan(dest ...any) error
 }
@@ -355,6 +389,8 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		subcategoryID  *string
 		incomeSourceID *string
 		comment        *string
+		postedAt       *time.Time
+		cancelledAt    *time.Time
 		createdAt      time.Time
 		updatedAt      time.Time
 	)
@@ -374,6 +410,8 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		&subcategoryID,
 		&incomeSourceID,
 		&comment,
+		&postedAt,
+		&cancelledAt,
 		&createdAt,
 		&updatedAt,
 	); err != nil {
@@ -413,8 +451,8 @@ func scanTransaction(row transactionScanner) (domaintransactions.Transaction, er
 		Comment:        comment,
 		OccurredAt:     occurredAt,
 		PlannedAt:      plannedAt,
-		PostedAt:       occurredAt,
-		CancelledAt:    nil,
+		PostedAt:       postedAt,
+		CancelledAt:    cancelledAt,
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 	})
@@ -483,6 +521,63 @@ func optionalIncomeSourceID(value *string) *shared.IncomeSourceID {
 	}
 	incomeSourceID := shared.IncomeSourceID(*value)
 	return &incomeSourceID
+}
+
+func appendTransactionListFilters(
+	query string,
+	args []any,
+	input appaccounting.ListTransactionsQuery,
+) (string, []any) {
+	if input.Type != nil {
+		query += fmt.Sprintf("  AND type = $%d\n", len(args)+1)
+		args = append(args, string(*input.Type))
+	}
+	if input.Status != nil {
+		query += fmt.Sprintf("  AND status = $%d\n", len(args)+1)
+		args = append(args, string(*input.Status))
+	}
+	if input.AccountID != nil {
+		query += fmt.Sprintf("  AND (account_from_id = $%d OR account_to_id = $%d)\n", len(args)+1, len(args)+1)
+		args = append(args, string(*input.AccountID))
+	}
+	if input.CategoryID != nil {
+		query += fmt.Sprintf("  AND category_id = $%d\n", len(args)+1)
+		args = append(args, string(*input.CategoryID))
+	}
+	if input.SubcategoryID != nil {
+		query += fmt.Sprintf("  AND subcategory_id = $%d\n", len(args)+1)
+		args = append(args, string(*input.SubcategoryID))
+	}
+	if input.EffectiveFrom != nil {
+		query += fmt.Sprintf("  AND COALESCE(occurred_at, planned_at) >= $%d\n", len(args)+1)
+		args = append(args, *input.EffectiveFrom)
+	}
+	if input.EffectiveTo != nil {
+		query += fmt.Sprintf("  AND COALESCE(occurred_at, planned_at) <= $%d\n", len(args)+1)
+		args = append(args, *input.EffectiveTo)
+	}
+	if input.OccurredFrom != nil {
+		query += fmt.Sprintf("  AND occurred_at >= $%d\n", len(args)+1)
+		args = append(args, *input.OccurredFrom)
+	}
+	if input.OccurredTo != nil {
+		query += fmt.Sprintf("  AND occurred_at <= $%d\n", len(args)+1)
+		args = append(args, *input.OccurredTo)
+	}
+	if input.PlannedFrom != nil {
+		query += fmt.Sprintf("  AND planned_at >= $%d\n", len(args)+1)
+		args = append(args, *input.PlannedFrom)
+	}
+	if input.PlannedTo != nil {
+		query += fmt.Sprintf("  AND planned_at <= $%d\n", len(args)+1)
+		args = append(args, *input.PlannedTo)
+	}
+	if input.Search != nil && strings.TrimSpace(*input.Search) != "" {
+		query += fmt.Sprintf("  AND lower(COALESCE(comment, '')) LIKE $%d\n", len(args)+1)
+		args = append(args, "%"+strings.ToLower(strings.TrimSpace(*input.Search))+"%")
+	}
+
+	return query, args
 }
 
 func listSortExpression(sort appaccounting.TransactionsSort) string {
