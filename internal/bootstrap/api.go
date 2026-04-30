@@ -184,7 +184,6 @@ func NewAPI(cfg Config) (*API, error) {
 	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
 	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
 		AuthMiddleware:   authMiddleware,
-		CatalogHandler:   catalogHandler,
 		StrictAPIHandler: apiHandler,
 	})
 
