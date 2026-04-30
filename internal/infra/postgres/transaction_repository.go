@@ -23,22 +23,6 @@ func NewTransactionRepository(pool *pgxpool.Pool) *TransactionRepository {
 	return &TransactionRepository{pool: pool}
 }
 
-type TransactionListInput struct {
-	UserID        shared.UserID
-	Type          *domaintransactions.TransactionType
-	Status        *domaintransactions.TransactionStatus
-	AccountID     *shared.AccountID
-	CategoryID    *shared.CategoryID
-	SubcategoryID *shared.SubcategoryID
-	OccurredFrom  *time.Time
-	OccurredTo    *time.Time
-	PlannedFrom   *time.Time
-	PlannedTo     *time.Time
-	Search        *string
-	Limit         int
-	Offset        int
-}
-
 func (r *TransactionRepository) Create(ctx context.Context, transaction domaintransactions.Transaction) error {
 	const query = `
 INSERT INTO transactions (
@@ -141,7 +125,7 @@ LIMIT 1
 
 func (r *TransactionRepository) ListByUserID(
 	ctx context.Context,
-	input TransactionListInput,
+	input appaccounting.ListTransactionsQuery,
 ) ([]domaintransactions.Transaction, error) {
 	query := `
 SELECT
@@ -206,7 +190,7 @@ WHERE user_id = $1
 		args = append(args, "%"+strings.ToLower(strings.TrimSpace(*input.Search))+"%")
 	}
 
-	query += "ORDER BY COALESCE(occurred_at, planned_at) DESC NULLS LAST, created_at DESC, id\n"
+	query += "ORDER BY " + listSortExpression(input.Sort) + ", id\n"
 	if input.Limit > 0 {
 		query += fmt.Sprintf("LIMIT $%d\n", len(args)+1)
 		args = append(args, input.Limit)
@@ -492,4 +476,21 @@ func optionalIncomeSourceID(value *string) *shared.IncomeSourceID {
 	}
 	incomeSourceID := shared.IncomeSourceID(*value)
 	return &incomeSourceID
+}
+
+func listSortExpression(sort appaccounting.TransactionsSort) string {
+	switch sort {
+	case appaccounting.TransactionsSortEffectiveAtAsc:
+		return "COALESCE(occurred_at, planned_at) ASC NULLS LAST, created_at ASC"
+	case appaccounting.TransactionsSortCreatedAtDesc:
+		return "created_at DESC"
+	case appaccounting.TransactionsSortCreatedAtAsc:
+		return "created_at ASC"
+	case appaccounting.TransactionsSortAmountDesc:
+		return "amount_minor DESC, created_at DESC"
+	case appaccounting.TransactionsSortAmountAsc:
+		return "amount_minor ASC, created_at DESC"
+	default:
+		return "COALESCE(occurred_at, planned_at) DESC NULLS LAST, created_at DESC"
+	}
 }

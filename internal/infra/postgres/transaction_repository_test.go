@@ -84,7 +84,7 @@ func TestTransactionRepositoryCreateFindAndListScopedByUserID(t *testing.T) {
 		t.Fatalf("expected ErrTransactionNotFound for foreign transaction, got %v", err)
 	}
 
-	list, err := repo.ListByUserID(ctx, TransactionListInput{
+	list, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID: userA,
 	})
 	if err != nil {
@@ -295,7 +295,7 @@ func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 	}
 
 	statusPlanned := domaintransactions.TransactionStatusPlanned
-	plannedOnly, err := repo.ListByUserID(ctx, TransactionListInput{
+	plannedOnly, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID: userID,
 		Status: &statusPlanned,
 	})
@@ -307,7 +307,7 @@ func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 	}
 
 	accountTo := accounts.to
-	byAccount, err := repo.ListByUserID(ctx, TransactionListInput{
+	byAccount, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID:    userID,
 		AccountID: &accountTo,
 	})
@@ -318,7 +318,7 @@ func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 		t.Fatalf("expected 2 transactions by account_to, got %d", len(byAccount))
 	}
 
-	byCategory, err := repo.ListByUserID(ctx, TransactionListInput{
+	byCategory, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID:     userID,
 		CategoryID: &categories.expense,
 	})
@@ -330,7 +330,7 @@ func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 	}
 
 	typeIncome := domaintransactions.TransactionTypeIncome
-	byType, err := repo.ListByUserID(ctx, TransactionListInput{
+	byType, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID: userID,
 		Type:   &typeIncome,
 	})
@@ -343,7 +343,7 @@ func TestTransactionRepositoryListByUserIDSupportsFilters(t *testing.T) {
 
 	rangeFrom := base.Add(36 * time.Hour)
 	rangeTo := base.Add(72 * time.Hour)
-	occurredInRange, err := repo.ListByUserID(ctx, TransactionListInput{
+	occurredInRange, err := repo.ListByUserID(ctx, appaccounting.ListTransactionsQuery{
 		UserID:       userID,
 		OccurredFrom: &rangeFrom,
 		OccurredTo:   &rangeTo,
