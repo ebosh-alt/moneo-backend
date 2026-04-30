@@ -1,0 +1,10 @@
+package: generated
+
+generate:
+  models: true
+  strict-server: true
+  embedded-spec: true
+  gin-server: true
+
+output-options:
+  skip-prune: true

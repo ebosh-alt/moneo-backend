@@ -5,5 +5,7 @@
 
 - `make openapi-lint` — lint OpenAPI contract via Redocly.
 - `make openapi` — lint + bundle + generate `oapi-codegen` output.
+- `make openapi-generate` — regenerate `internal/transport/http/generated/api.gen.go` from bundled OpenAPI.
 - `make check` — full local gate in order: `fmt -> vet -> openapi-lint -> openapi-generate -> test -> build`.
 - `make openapi-check` — same as `openapi`, then verifies no generation drift via `git diff --exit-code`.
+- `internal/transport/http/generated/api.gen.go` is generated code and must not be edited manually.
