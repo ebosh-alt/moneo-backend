@@ -54,6 +54,7 @@ type Transaction struct {
 	subcategoryID   *shared.SubcategoryID
 	incomeSourceID  *shared.IncomeSourceID
 	occurredAt      *time.Time
+	plannedAt       *time.Time
 	postedAt        *time.Time
 	cancelledAt     *time.Time
 	createdAt       time.Time
@@ -72,6 +73,7 @@ type NewTransactionParams struct {
 	SubcategoryID  *shared.SubcategoryID
 	IncomeSourceID *shared.IncomeSourceID
 	OccurredAt     *time.Time
+	PlannedAt      *time.Time
 	PostedAt       *time.Time
 	CancelledAt    *time.Time
 	CreatedAt      time.Time
@@ -113,6 +115,7 @@ func NewTransaction(params NewTransactionParams) (Transaction, error) {
 		subcategoryID:   cloneSubcategoryID(params.SubcategoryID),
 		incomeSourceID:  cloneIncomeSourceID(params.IncomeSourceID),
 		occurredAt:      cloneTime(params.OccurredAt),
+		plannedAt:       cloneTime(params.PlannedAt),
 		postedAt:        cloneTime(params.PostedAt),
 		cancelledAt:     cloneTime(params.CancelledAt),
 		createdAt:       params.CreatedAt,
@@ -280,6 +283,10 @@ func (t Transaction) IncomeSourceID() *shared.IncomeSourceID {
 
 func (t Transaction) OccurredAt() *time.Time {
 	return cloneTime(t.occurredAt)
+}
+
+func (t Transaction) PlannedAt() *time.Time {
+	return cloneTime(t.plannedAt)
 }
 
 func (t Transaction) PostedAt() *time.Time {
