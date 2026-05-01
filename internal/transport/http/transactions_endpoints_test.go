@@ -577,7 +577,7 @@ func newTransactionsStrictRouterWithAuthFixture(t *testing.T) transactionsRouter
 
 	service := newTransactionUseCases()
 	catalogHandler := newTransactionsCatalogHandlerForTest(service)
-	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
+	apiHandler := transporthttp.NewAPIHandler(nil, catalogHandler)
 	authFixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		StrictAPIHandler: apiHandler,
 	})

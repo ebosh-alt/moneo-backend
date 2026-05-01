@@ -1295,7 +1295,7 @@ func newCatalogStrictRouterWithAuthFixture(t *testing.T, store *catalogTestStore
 	t.Helper()
 
 	catalogHandler := newCatalogHandlerForTest(store)
-	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
+	apiHandler := transporthttp.NewAPIHandler(nil, catalogHandler)
 
 	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		StrictAPIHandler: apiHandler,
@@ -1336,7 +1336,7 @@ func newCatalogHandlerForTest(store *catalogTestStore) *transporthttp.CatalogHan
 func registerAndGetAccessToken(t *testing.T, handler http.Handler, email string) string {
 	t.Helper()
 
-	rec := performJSONRequest(t, handler, http.MethodPost, "/auth/register", map[string]any{
+	rec := performJSONRequest(t, handler, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            email,
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",

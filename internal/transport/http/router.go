@@ -26,6 +26,8 @@ func NewRouter(authHandler *AuthHandler, authMiddleware ...gin.HandlerFunc) *gin
 }
 
 func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.Engine {
+	_ = authHandler
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 
@@ -37,36 +39,16 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		router.Use(securityMiddleware)
 	}
 
-	router.POST("/auth/register", authHandler.Register)
-	router.POST("/auth/login", authHandler.Login)
-	router.POST("/auth/forgot-password", authHandler.ForgotPassword)
-	router.POST("/auth/reset-password", authHandler.ResetPassword)
-	router.POST("/auth/refresh", authHandler.Refresh)
-	router.POST("/auth/logout", authHandler.Logout)
-	router.POST("/auth/logout-all", authHandler.LogoutAll)
-	router.POST("/auth/verify-email", authHandler.VerifyEmail)
+	if options.StrictAPIHandler == nil {
+		panic("strict api handler is required")
+	}
 
 	if options.AuthMiddleware != nil {
-		protectedAuth := router.Group("/auth", options.AuthMiddleware)
-		protectedAuth.GET("/me", authHandler.Me)
-		protectedAuth.GET("/sessions", authHandler.Sessions)
-		protectedAuth.DELETE("/sessions/:sessionId", authHandler.RevokeSession)
-		protectedAuth.POST("/send-verification-email", authHandler.SendVerificationEmail)
-
-		if options.StrictAPIHandler != nil {
-			protectedAPI := router.Group("/", options.AuthMiddleware)
-			registerStrictHandlers(protectedAPI, options.StrictAPIHandler)
-		}
+		protectedAPI := router.Group("/", options.AuthMiddleware)
+		registerStrictHandlers(protectedAPI, options.StrictAPIHandler)
 	} else {
-		router.GET("/auth/me", authHandler.Me)
-		router.GET("/auth/sessions", authHandler.Sessions)
-		router.DELETE("/auth/sessions/:sessionId", authHandler.RevokeSession)
-		router.POST("/auth/send-verification-email", authHandler.SendVerificationEmail)
-
-		if options.StrictAPIHandler != nil {
-			publicAPI := router.Group("/")
-			registerStrictHandlers(publicAPI, options.StrictAPIHandler)
-		}
+		publicAPI := router.Group("/")
+		registerStrictHandlers(publicAPI, options.StrictAPIHandler)
 	}
 
 	return router

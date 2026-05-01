@@ -38,13 +38,6 @@ const (
 	ErrorBodyCodeValidationError       ErrorBodyCode = "validation_error"
 )
 
-// Defines values for ListAccountsLegacyParamsSort.
-const (
-	ListAccountsLegacyParamsSortBalanceDesc   ListAccountsLegacyParamsSort = "balance:desc"
-	ListAccountsLegacyParamsSortCreatedAtDesc ListAccountsLegacyParamsSort = "createdAt:desc"
-	ListAccountsLegacyParamsSortNameAsc       ListAccountsLegacyParamsSort = "name:asc"
-)
-
 // Defines values for ListAccountsParamsSort.
 const (
 	ListAccountsParamsSortBalanceDesc   ListAccountsParamsSort = "balance:desc"
@@ -74,30 +67,6 @@ const (
 	ListTransactionsParamsSortCreatedAtDesc  ListTransactionsParamsSort = "createdAt:desc"
 	ListTransactionsParamsSortOccurredAtAsc  ListTransactionsParamsSort = "occurredAt:asc"
 	ListTransactionsParamsSortOccurredAtDesc ListTransactionsParamsSort = "occurredAt:desc"
-)
-
-// Defines values for ListCategoriesLegacyParamsSort.
-const (
-	ListCategoriesLegacyParamsSortCreatedAtDesc ListCategoriesLegacyParamsSort = "createdAt:desc"
-	ListCategoriesLegacyParamsSortNameAsc       ListCategoriesLegacyParamsSort = "name:asc"
-	ListCategoriesLegacyParamsSortSortOrderAsc  ListCategoriesLegacyParamsSort = "sortOrder:asc"
-)
-
-// Defines values for ListSubcategoriesLegacyParamsSort.
-const (
-	ListSubcategoriesLegacyParamsSortCreatedAtDesc ListSubcategoriesLegacyParamsSort = "createdAt:desc"
-	ListSubcategoriesLegacyParamsSortNameAsc       ListSubcategoriesLegacyParamsSort = "name:asc"
-	ListSubcategoriesLegacyParamsSortSortOrderAsc  ListSubcategoriesLegacyParamsSort = "sortOrder:asc"
-)
-
-// Defines values for ListTransactionsLegacyParamsSort.
-const (
-	ListTransactionsLegacyParamsSortAmountAsc      ListTransactionsLegacyParamsSort = "amount:asc"
-	ListTransactionsLegacyParamsSortAmountDesc     ListTransactionsLegacyParamsSort = "amount:desc"
-	ListTransactionsLegacyParamsSortCreatedAtAsc   ListTransactionsLegacyParamsSort = "createdAt:asc"
-	ListTransactionsLegacyParamsSortCreatedAtDesc  ListTransactionsLegacyParamsSort = "createdAt:desc"
-	ListTransactionsLegacyParamsSortOccurredAtAsc  ListTransactionsLegacyParamsSort = "occurredAt:asc"
-	ListTransactionsLegacyParamsSortOccurredAtDesc ListTransactionsLegacyParamsSort = "occurredAt:desc"
 )
 
 // Account defines model for Account.
@@ -135,6 +104,76 @@ type AccountSummaryAccount struct {
 	IncludeInNetWorth    bool   `json:"includeInNetWorth"`
 	Name                 string `json:"name"`
 	Type                 string `json:"type"`
+}
+
+// AuthErrorResponse defines model for AuthErrorResponse.
+type AuthErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// AuthForgotPasswordRequest defines model for AuthForgotPasswordRequest.
+type AuthForgotPasswordRequest struct {
+	Email *string `json:"email,omitempty"`
+}
+
+// AuthLoginRequest defines model for AuthLoginRequest.
+type AuthLoginRequest struct {
+	Email    *string `json:"email,omitempty"`
+	Password *string `json:"password,omitempty"`
+}
+
+// AuthMeResponse defines model for AuthMeResponse.
+type AuthMeResponse struct {
+	CreatedAt     time.Time `json:"created_at"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	Id            string    `json:"id"`
+}
+
+// AuthOKResponse defines model for AuthOKResponse.
+type AuthOKResponse struct {
+	Ok bool `json:"ok"`
+}
+
+// AuthRegisterRequest defines model for AuthRegisterRequest.
+type AuthRegisterRequest struct {
+	Email           *string `json:"email,omitempty"`
+	Password        *string `json:"password,omitempty"`
+	PasswordConfirm *string `json:"password_confirm,omitempty"`
+}
+
+// AuthResetPasswordRequest defines model for AuthResetPasswordRequest.
+type AuthResetPasswordRequest struct {
+	Password        *string `json:"password,omitempty"`
+	PasswordConfirm *string `json:"password_confirm,omitempty"`
+	Token           *string `json:"token,omitempty"`
+}
+
+// AuthResponse defines model for AuthResponse.
+type AuthResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+// AuthSession defines model for AuthSession.
+type AuthSession struct {
+	CreatedAt  time.Time  `json:"created_at"`
+	DeviceName *string    `json:"device_name"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	Id         string     `json:"id"`
+	Ip         *string    `json:"ip"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	UserAgent  *string    `json:"user_agent"`
+}
+
+// AuthSessionsResponse defines model for AuthSessionsResponse.
+type AuthSessionsResponse struct {
+	Sessions []AuthSession `json:"sessions"`
+}
+
+// AuthVerifyEmailRequest defines model for AuthVerifyEmailRequest.
+type AuthVerifyEmailRequest struct {
+	Token *string `json:"token,omitempty"`
 }
 
 // Category defines model for Category.
@@ -399,11 +438,17 @@ type Limit = int
 // Offset defines model for Offset.
 type Offset = int
 
+// SessionId defines model for SessionId.
+type SessionId = string
+
 // SubcategoryId defines model for SubcategoryId.
 type SubcategoryId = string
 
 // TransactionId defines model for TransactionId.
 type TransactionId = string
+
+// AuthError defines model for AuthError.
+type AuthError = AuthErrorResponse
 
 // BusinessRuleError defines model for BusinessRuleError.
 type BusinessRuleError = ErrorEnvelope
@@ -422,25 +467,6 @@ type UnauthorizedError = ErrorEnvelope
 
 // ValidationError defines model for ValidationError.
 type ValidationError = ErrorEnvelope
-
-// ListAccountsLegacyParams defines parameters for ListAccountsLegacy.
-type ListAccountsLegacyParams struct {
-	// Limit Default 50, max clamped to 200.
-	Limit           *Limit                        `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset          *Offset                       `form:"offset,omitempty" json:"offset,omitempty"`
-	IncludeArchived *IncludeArchived              `form:"includeArchived,omitempty" json:"includeArchived,omitempty"`
-	Type            *string                       `form:"type,omitempty" json:"type,omitempty"`
-	Currency        *string                       `form:"currency,omitempty" json:"currency,omitempty"`
-	Sort            *ListAccountsLegacyParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
-}
-
-// ListAccountsLegacyParamsSort defines parameters for ListAccountsLegacy.
-type ListAccountsLegacyParamsSort string
-
-// GetAccountsSummaryLegacyParams defines parameters for GetAccountsSummaryLegacy.
-type GetAccountsSummaryLegacyParams struct {
-	Currency string `form:"currency" json:"currency"`
-}
 
 // ListAccountsParams defines parameters for ListAccounts.
 type ListAccountsParams struct {
@@ -530,86 +556,26 @@ type CancelTransactionJSONBody = map[string]interface{}
 // PostTransactionJSONBody defines parameters for PostTransaction.
 type PostTransactionJSONBody = map[string]interface{}
 
-// ListCategoriesLegacyParams defines parameters for ListCategoriesLegacy.
-type ListCategoriesLegacyParams struct {
-	// Limit Default 50, max clamped to 200.
-	Limit                *Limit                          `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset               *Offset                         `form:"offset,omitempty" json:"offset,omitempty"`
-	IncludeArchived      *IncludeArchived                `form:"includeArchived,omitempty" json:"includeArchived,omitempty"`
-	IncludeSubcategories *IncludeSubcategories           `form:"includeSubcategories,omitempty" json:"includeSubcategories,omitempty"`
-	Type                 *string                         `form:"type,omitempty" json:"type,omitempty"`
-	Sort                 *ListCategoriesLegacyParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
-}
-
-// ListCategoriesLegacyParamsSort defines parameters for ListCategoriesLegacy.
-type ListCategoriesLegacyParamsSort string
-
-// GetCategoryLegacyParams defines parameters for GetCategoryLegacy.
-type GetCategoryLegacyParams struct {
-	IncludeSubcategories *IncludeSubcategories `form:"includeSubcategories,omitempty" json:"includeSubcategories,omitempty"`
-}
-
-// ListCategorySubcategoriesLegacyParams defines parameters for ListCategorySubcategoriesLegacy.
-type ListCategorySubcategoriesLegacyParams struct {
-	// Limit Default 50, max clamped to 200.
-	Limit           *Limit           `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset          *Offset          `form:"offset,omitempty" json:"offset,omitempty"`
-	IncludeArchived *IncludeArchived `form:"includeArchived,omitempty" json:"includeArchived,omitempty"`
-}
-
-// ListSubcategoriesLegacyParams defines parameters for ListSubcategoriesLegacy.
-type ListSubcategoriesLegacyParams struct {
-	// Limit Default 50, max clamped to 200.
-	Limit           *Limit                             `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset          *Offset                            `form:"offset,omitempty" json:"offset,omitempty"`
-	IncludeArchived *IncludeArchived                   `form:"includeArchived,omitempty" json:"includeArchived,omitempty"`
-	CategoryId      *string                            `form:"categoryId,omitempty" json:"categoryId,omitempty"`
-	Sort            *ListSubcategoriesLegacyParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
-}
-
-// ListSubcategoriesLegacyParamsSort defines parameters for ListSubcategoriesLegacy.
-type ListSubcategoriesLegacyParamsSort string
-
-// ListTransactionsLegacyParams defines parameters for ListTransactionsLegacy.
-type ListTransactionsLegacyParams struct {
-	// Limit Default 50, max clamped to 200.
-	Limit         *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset        *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
-	Month         *string             `form:"month,omitempty" json:"month,omitempty"`
-	From          *openapi_types.Date `form:"from,omitempty" json:"from,omitempty"`
-	To            *openapi_types.Date `form:"to,omitempty" json:"to,omitempty"`
-	Type          *string             `form:"type,omitempty" json:"type,omitempty"`
-	Status        *string             `form:"status,omitempty" json:"status,omitempty"`
-	AccountId     *string             `form:"accountId,omitempty" json:"accountId,omitempty"`
-	CategoryId    *string             `form:"categoryId,omitempty" json:"categoryId,omitempty"`
-	SubcategoryId *string             `form:"subcategoryId,omitempty" json:"subcategoryId,omitempty"`
-	Q             *string             `form:"q,omitempty" json:"q,omitempty"`
-
-	// BudgetMemberId Currently unsupported in MVP1 (returns 400 validation_error when provided)
-	BudgetMemberId *string                           `form:"budgetMemberId,omitempty" json:"budgetMemberId,omitempty"`
-	Sort           *ListTransactionsLegacyParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
-}
-
-// ListTransactionsLegacyParamsSort defines parameters for ListTransactionsLegacy.
-type ListTransactionsLegacyParamsSort string
-
-// CancelTransactionLegacyJSONBody defines parameters for CancelTransactionLegacy.
-type CancelTransactionLegacyJSONBody = map[string]interface{}
-
-// PostTransactionLegacyJSONBody defines parameters for PostTransactionLegacy.
-type PostTransactionLegacyJSONBody = map[string]interface{}
-
-// CreateAccountLegacyJSONRequestBody defines body for CreateAccountLegacy for application/json ContentType.
-type CreateAccountLegacyJSONRequestBody = CreateAccountRequest
-
-// PatchAccountLegacyJSONRequestBody defines body for PatchAccountLegacy for application/json ContentType.
-type PatchAccountLegacyJSONRequestBody = PatchAccountRequest
-
 // CreateAccountJSONRequestBody defines body for CreateAccount for application/json ContentType.
 type CreateAccountJSONRequestBody = CreateAccountRequest
 
 // PatchAccountJSONRequestBody defines body for PatchAccount for application/json ContentType.
 type PatchAccountJSONRequestBody = PatchAccountRequest
+
+// ForgotPasswordAuthJSONRequestBody defines body for ForgotPasswordAuth for application/json ContentType.
+type ForgotPasswordAuthJSONRequestBody = AuthForgotPasswordRequest
+
+// LoginAuthJSONRequestBody defines body for LoginAuth for application/json ContentType.
+type LoginAuthJSONRequestBody = AuthLoginRequest
+
+// RegisterAuthJSONRequestBody defines body for RegisterAuth for application/json ContentType.
+type RegisterAuthJSONRequestBody = AuthRegisterRequest
+
+// ResetPasswordAuthJSONRequestBody defines body for ResetPasswordAuth for application/json ContentType.
+type ResetPasswordAuthJSONRequestBody = AuthResetPasswordRequest
+
+// VerifyEmailAuthJSONRequestBody defines body for VerifyEmailAuth for application/json ContentType.
+type VerifyEmailAuthJSONRequestBody = AuthVerifyEmailRequest
 
 // CreateCategoryJSONRequestBody defines body for CreateCategory for application/json ContentType.
 type CreateCategoryJSONRequestBody = CreateCategoryRequest
@@ -644,62 +610,8 @@ type DuplicateTransactionJSONRequestBody = DuplicateTransactionRequest
 // PostTransactionJSONRequestBody defines body for PostTransaction for application/json ContentType.
 type PostTransactionJSONRequestBody = PostTransactionJSONBody
 
-// CreateCategoryLegacyJSONRequestBody defines body for CreateCategoryLegacy for application/json ContentType.
-type CreateCategoryLegacyJSONRequestBody = CreateCategoryRequest
-
-// PatchCategoryLegacyJSONRequestBody defines body for PatchCategoryLegacy for application/json ContentType.
-type PatchCategoryLegacyJSONRequestBody = PatchCategoryRequest
-
-// CreateSubcategoryLegacyJSONRequestBody defines body for CreateSubcategoryLegacy for application/json ContentType.
-type CreateSubcategoryLegacyJSONRequestBody = CreateSubcategoryRequest
-
-// PatchSubcategoryLegacyJSONRequestBody defines body for PatchSubcategoryLegacy for application/json ContentType.
-type PatchSubcategoryLegacyJSONRequestBody = PatchSubcategoryRequest
-
-// CreateTransactionLegacyJSONRequestBody defines body for CreateTransactionLegacy for application/json ContentType.
-type CreateTransactionLegacyJSONRequestBody = CreateTransactionRequest
-
-// PatchTransactionsBulkLegacyJSONRequestBody defines body for PatchTransactionsBulkLegacy for application/json ContentType.
-type PatchTransactionsBulkLegacyJSONRequestBody = PatchTransactionsBulkRequest
-
-// CreateTransactionsBulkLegacyJSONRequestBody defines body for CreateTransactionsBulkLegacy for application/json ContentType.
-type CreateTransactionsBulkLegacyJSONRequestBody = CreateTransactionsBulkRequest
-
-// PatchTransactionLegacyJSONRequestBody defines body for PatchTransactionLegacy for application/json ContentType.
-type PatchTransactionLegacyJSONRequestBody = PatchTransactionRequest
-
-// CancelTransactionLegacyJSONRequestBody defines body for CancelTransactionLegacy for application/json ContentType.
-type CancelTransactionLegacyJSONRequestBody = CancelTransactionLegacyJSONBody
-
-// DuplicateTransactionLegacyJSONRequestBody defines body for DuplicateTransactionLegacy for application/json ContentType.
-type DuplicateTransactionLegacyJSONRequestBody = DuplicateTransactionRequest
-
-// PostTransactionLegacyJSONRequestBody defines body for PostTransactionLegacy for application/json ContentType.
-type PostTransactionLegacyJSONRequestBody = PostTransactionLegacyJSONBody
-
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// GET operation
-	// (GET /accounts)
-	ListAccountsLegacy(c *gin.Context, params ListAccountsLegacyParams)
-	// POST operation
-	// (POST /accounts)
-	CreateAccountLegacy(c *gin.Context)
-	// GET operation
-	// (GET /accounts/summary)
-	GetAccountsSummaryLegacy(c *gin.Context, params GetAccountsSummaryLegacyParams)
-	// GET operation
-	// (GET /accounts/{accountId})
-	GetAccountLegacy(c *gin.Context, accountId AccountId)
-	// PATCH operation
-	// (PATCH /accounts/{accountId})
-	PatchAccountLegacy(c *gin.Context, accountId AccountId)
-	// POST operation
-	// (POST /accounts/{accountId}/archive)
-	ArchiveAccountLegacy(c *gin.Context, accountId AccountId)
-	// POST operation
-	// (POST /accounts/{accountId}/restore)
-	RestoreAccountLegacy(c *gin.Context, accountId AccountId)
 	// GET operation
 	// (GET /api/v1/accounts)
 	ListAccounts(c *gin.Context, params ListAccountsParams)
@@ -721,6 +633,42 @@ type ServerInterface interface {
 	// POST operation
 	// (POST /api/v1/accounts/{accountId}/restore)
 	RestoreAccount(c *gin.Context, accountId AccountId)
+	// POST operation
+	// (POST /api/v1/auth/forgot-password)
+	ForgotPasswordAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/login)
+	LoginAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/logout)
+	LogoutAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/logout-all)
+	LogoutAllAuth(c *gin.Context)
+	// GET operation
+	// (GET /api/v1/auth/me)
+	MeAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/refresh)
+	RefreshAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/register)
+	RegisterAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/reset-password)
+	ResetPasswordAuth(c *gin.Context)
+	// POST operation
+	// (POST /api/v1/auth/send-verification-email)
+	SendVerificationEmailAuth(c *gin.Context)
+	// GET operation
+	// (GET /api/v1/auth/sessions)
+	SessionsAuth(c *gin.Context)
+	// DELETE operation
+	// (DELETE /api/v1/auth/sessions/{sessionId})
+	RevokeSessionAuth(c *gin.Context, sessionId SessionId)
+	// POST operation
+	// (POST /api/v1/auth/verify-email)
+	VerifyEmailAuth(c *gin.Context)
 	// GET operation
 	// (GET /api/v1/categories)
 	ListCategories(c *gin.Context, params ListCategoriesParams)
@@ -790,75 +738,6 @@ type ServerInterface interface {
 	// POST operation
 	// (POST /api/v1/transactions/{transactionId}/post)
 	PostTransaction(c *gin.Context, transactionId TransactionId)
-	// GET operation
-	// (GET /categories)
-	ListCategoriesLegacy(c *gin.Context, params ListCategoriesLegacyParams)
-	// POST operation
-	// (POST /categories)
-	CreateCategoryLegacy(c *gin.Context)
-	// DELETE operation
-	// (DELETE /categories/{categoryId})
-	DeleteCategoryLegacy(c *gin.Context, categoryId CategoryId)
-	// GET operation
-	// (GET /categories/{categoryId})
-	GetCategoryLegacy(c *gin.Context, categoryId CategoryId, params GetCategoryLegacyParams)
-	// PATCH operation
-	// (PATCH /categories/{categoryId})
-	PatchCategoryLegacy(c *gin.Context, categoryId CategoryId)
-	// POST operation
-	// (POST /categories/{categoryId}/restore)
-	RestoreCategoryLegacy(c *gin.Context, categoryId CategoryId)
-	// GET operation
-	// (GET /categories/{categoryId}/subcategories)
-	ListCategorySubcategoriesLegacy(c *gin.Context, categoryId CategoryId, params ListCategorySubcategoriesLegacyParams)
-	// POST operation
-	// (POST /categories/{categoryId}/subcategories)
-	CreateSubcategoryLegacy(c *gin.Context, categoryId CategoryId)
-	// GET operation
-	// (GET /subcategories)
-	ListSubcategoriesLegacy(c *gin.Context, params ListSubcategoriesLegacyParams)
-	// DELETE operation
-	// (DELETE /subcategories/{subcategoryId})
-	DeleteSubcategoryLegacy(c *gin.Context, subcategoryId SubcategoryId)
-	// GET operation
-	// (GET /subcategories/{subcategoryId})
-	GetSubcategoryLegacy(c *gin.Context, subcategoryId SubcategoryId)
-	// PATCH operation
-	// (PATCH /subcategories/{subcategoryId})
-	PatchSubcategoryLegacy(c *gin.Context, subcategoryId SubcategoryId)
-	// POST operation
-	// (POST /subcategories/{subcategoryId}/restore)
-	RestoreSubcategoryLegacy(c *gin.Context, subcategoryId SubcategoryId)
-	// GET operation
-	// (GET /transactions)
-	ListTransactionsLegacy(c *gin.Context, params ListTransactionsLegacyParams)
-	// POST operation
-	// (POST /transactions)
-	CreateTransactionLegacy(c *gin.Context)
-	// PATCH operation
-	// (PATCH /transactions/bulk)
-	PatchTransactionsBulkLegacy(c *gin.Context)
-	// POST operation
-	// (POST /transactions/bulk)
-	CreateTransactionsBulkLegacy(c *gin.Context)
-	// DELETE operation
-	// (DELETE /transactions/{transactionId})
-	DeleteTransactionLegacy(c *gin.Context, transactionId TransactionId)
-	// GET operation
-	// (GET /transactions/{transactionId})
-	GetTransactionLegacy(c *gin.Context, transactionId TransactionId)
-	// PATCH operation
-	// (PATCH /transactions/{transactionId})
-	PatchTransactionLegacy(c *gin.Context, transactionId TransactionId)
-	// POST operation
-	// (POST /transactions/{transactionId}/cancel)
-	CancelTransactionLegacy(c *gin.Context, transactionId TransactionId)
-	// POST operation
-	// (POST /transactions/{transactionId}/duplicate)
-	DuplicateTransactionLegacy(c *gin.Context, transactionId TransactionId)
-	// POST operation
-	// (POST /transactions/{transactionId}/post)
-	PostTransactionLegacy(c *gin.Context, transactionId TransactionId)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -869,228 +748,6 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
-
-// ListAccountsLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ListAccountsLegacy(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListAccountsLegacyParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "includeArchived" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeArchived", c.Request.URL.Query(), &params.IncludeArchived)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeArchived: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "type" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "type", c.Request.URL.Query(), &params.Type)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter type: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "currency" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "currency", c.Request.URL.Query(), &params.Currency)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter currency: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "sort" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "sort", c.Request.URL.Query(), &params.Sort)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListAccountsLegacy(c, params)
-}
-
-// CreateAccountLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CreateAccountLegacy(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CreateAccountLegacy(c)
-}
-
-// GetAccountsSummaryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) GetAccountsSummaryLegacy(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetAccountsSummaryLegacyParams
-
-	// ------------- Required query parameter "currency" -------------
-
-	if paramValue := c.Query("currency"); paramValue != "" {
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Query argument currency is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	err = runtime.BindQueryParameter("form", true, true, "currency", c.Request.URL.Query(), &params.Currency)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter currency: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetAccountsSummaryLegacy(c, params)
-}
-
-// GetAccountLegacy operation middleware
-func (siw *ServerInterfaceWrapper) GetAccountLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "accountId" -------------
-	var accountId AccountId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "accountId", c.Param("accountId"), &accountId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter accountId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetAccountLegacy(c, accountId)
-}
-
-// PatchAccountLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PatchAccountLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "accountId" -------------
-	var accountId AccountId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "accountId", c.Param("accountId"), &accountId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter accountId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PatchAccountLegacy(c, accountId)
-}
-
-// ArchiveAccountLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ArchiveAccountLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "accountId" -------------
-	var accountId AccountId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "accountId", c.Param("accountId"), &accountId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter accountId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ArchiveAccountLegacy(c, accountId)
-}
-
-// RestoreAccountLegacy operation middleware
-func (siw *ServerInterfaceWrapper) RestoreAccountLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "accountId" -------------
-	var accountId AccountId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "accountId", c.Param("accountId"), &accountId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter accountId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RestoreAccountLegacy(c, accountId)
-}
 
 // ListAccounts operation middleware
 func (siw *ServerInterfaceWrapper) ListAccounts(c *gin.Context) {
@@ -1312,6 +969,183 @@ func (siw *ServerInterfaceWrapper) RestoreAccount(c *gin.Context) {
 	}
 
 	siw.Handler.RestoreAccount(c, accountId)
+}
+
+// ForgotPasswordAuth operation middleware
+func (siw *ServerInterfaceWrapper) ForgotPasswordAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ForgotPasswordAuth(c)
+}
+
+// LoginAuth operation middleware
+func (siw *ServerInterfaceWrapper) LoginAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LoginAuth(c)
+}
+
+// LogoutAuth operation middleware
+func (siw *ServerInterfaceWrapper) LogoutAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LogoutAuth(c)
+}
+
+// LogoutAllAuth operation middleware
+func (siw *ServerInterfaceWrapper) LogoutAllAuth(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.LogoutAllAuth(c)
+}
+
+// MeAuth operation middleware
+func (siw *ServerInterfaceWrapper) MeAuth(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MeAuth(c)
+}
+
+// RefreshAuth operation middleware
+func (siw *ServerInterfaceWrapper) RefreshAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefreshAuth(c)
+}
+
+// RegisterAuth operation middleware
+func (siw *ServerInterfaceWrapper) RegisterAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RegisterAuth(c)
+}
+
+// ResetPasswordAuth operation middleware
+func (siw *ServerInterfaceWrapper) ResetPasswordAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ResetPasswordAuth(c)
+}
+
+// SendVerificationEmailAuth operation middleware
+func (siw *ServerInterfaceWrapper) SendVerificationEmailAuth(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SendVerificationEmailAuth(c)
+}
+
+// SessionsAuth operation middleware
+func (siw *ServerInterfaceWrapper) SessionsAuth(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SessionsAuth(c)
+}
+
+// RevokeSessionAuth operation middleware
+func (siw *ServerInterfaceWrapper) RevokeSessionAuth(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", c.Param("sessionId"), &sessionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sessionId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RevokeSessionAuth(c, sessionId)
+}
+
+// VerifyEmailAuth operation middleware
+func (siw *ServerInterfaceWrapper) VerifyEmailAuth(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.VerifyEmailAuth(c)
 }
 
 // ListCategories operation middleware
@@ -2080,772 +1914,6 @@ func (siw *ServerInterfaceWrapper) PostTransaction(c *gin.Context) {
 	siw.Handler.PostTransaction(c, transactionId)
 }
 
-// ListCategoriesLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ListCategoriesLegacy(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListCategoriesLegacyParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "includeArchived" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeArchived", c.Request.URL.Query(), &params.IncludeArchived)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeArchived: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "includeSubcategories" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeSubcategories", c.Request.URL.Query(), &params.IncludeSubcategories)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeSubcategories: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "type" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "type", c.Request.URL.Query(), &params.Type)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter type: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "sort" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "sort", c.Request.URL.Query(), &params.Sort)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListCategoriesLegacy(c, params)
-}
-
-// CreateCategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CreateCategoryLegacy(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CreateCategoryLegacy(c)
-}
-
-// DeleteCategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) DeleteCategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.DeleteCategoryLegacy(c, categoryId)
-}
-
-// GetCategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) GetCategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetCategoryLegacyParams
-
-	// ------------- Optional query parameter "includeSubcategories" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeSubcategories", c.Request.URL.Query(), &params.IncludeSubcategories)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeSubcategories: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetCategoryLegacy(c, categoryId, params)
-}
-
-// PatchCategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PatchCategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PatchCategoryLegacy(c, categoryId)
-}
-
-// RestoreCategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) RestoreCategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RestoreCategoryLegacy(c, categoryId)
-}
-
-// ListCategorySubcategoriesLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ListCategorySubcategoriesLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListCategorySubcategoriesLegacyParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "includeArchived" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeArchived", c.Request.URL.Query(), &params.IncludeArchived)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeArchived: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListCategorySubcategoriesLegacy(c, categoryId, params)
-}
-
-// CreateSubcategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CreateSubcategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "categoryId" -------------
-	var categoryId CategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "categoryId", c.Param("categoryId"), &categoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CreateSubcategoryLegacy(c, categoryId)
-}
-
-// ListSubcategoriesLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ListSubcategoriesLegacy(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListSubcategoriesLegacyParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "includeArchived" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "includeArchived", c.Request.URL.Query(), &params.IncludeArchived)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeArchived: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "categoryId" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "categoryId", c.Request.URL.Query(), &params.CategoryId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "sort" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "sort", c.Request.URL.Query(), &params.Sort)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListSubcategoriesLegacy(c, params)
-}
-
-// DeleteSubcategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) DeleteSubcategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "subcategoryId" -------------
-	var subcategoryId SubcategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "subcategoryId", c.Param("subcategoryId"), &subcategoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter subcategoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.DeleteSubcategoryLegacy(c, subcategoryId)
-}
-
-// GetSubcategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) GetSubcategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "subcategoryId" -------------
-	var subcategoryId SubcategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "subcategoryId", c.Param("subcategoryId"), &subcategoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter subcategoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetSubcategoryLegacy(c, subcategoryId)
-}
-
-// PatchSubcategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PatchSubcategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "subcategoryId" -------------
-	var subcategoryId SubcategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "subcategoryId", c.Param("subcategoryId"), &subcategoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter subcategoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PatchSubcategoryLegacy(c, subcategoryId)
-}
-
-// RestoreSubcategoryLegacy operation middleware
-func (siw *ServerInterfaceWrapper) RestoreSubcategoryLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "subcategoryId" -------------
-	var subcategoryId SubcategoryId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "subcategoryId", c.Param("subcategoryId"), &subcategoryId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter subcategoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RestoreSubcategoryLegacy(c, subcategoryId)
-}
-
-// ListTransactionsLegacy operation middleware
-func (siw *ServerInterfaceWrapper) ListTransactionsLegacy(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListTransactionsLegacyParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "month" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "month", c.Request.URL.Query(), &params.Month)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter month: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "from" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "from", c.Request.URL.Query(), &params.From)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter from: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "to" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "to", c.Request.URL.Query(), &params.To)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter to: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "type" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "type", c.Request.URL.Query(), &params.Type)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter type: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "status", c.Request.URL.Query(), &params.Status)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "accountId" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "accountId", c.Request.URL.Query(), &params.AccountId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter accountId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "categoryId" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "categoryId", c.Request.URL.Query(), &params.CategoryId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter categoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "subcategoryId" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "subcategoryId", c.Request.URL.Query(), &params.SubcategoryId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter subcategoryId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "q" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "q", c.Request.URL.Query(), &params.Q)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "budgetMemberId" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "budgetMemberId", c.Request.URL.Query(), &params.BudgetMemberId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter budgetMemberId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "sort" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "sort", c.Request.URL.Query(), &params.Sort)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListTransactionsLegacy(c, params)
-}
-
-// CreateTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CreateTransactionLegacy(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CreateTransactionLegacy(c)
-}
-
-// PatchTransactionsBulkLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PatchTransactionsBulkLegacy(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PatchTransactionsBulkLegacy(c)
-}
-
-// CreateTransactionsBulkLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CreateTransactionsBulkLegacy(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CreateTransactionsBulkLegacy(c)
-}
-
-// DeleteTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) DeleteTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.DeleteTransactionLegacy(c, transactionId)
-}
-
-// GetTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) GetTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetTransactionLegacy(c, transactionId)
-}
-
-// PatchTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PatchTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PatchTransactionLegacy(c, transactionId)
-}
-
-// CancelTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) CancelTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CancelTransactionLegacy(c, transactionId)
-}
-
-// DuplicateTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) DuplicateTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.DuplicateTransactionLegacy(c, transactionId)
-}
-
-// PostTransactionLegacy operation middleware
-func (siw *ServerInterfaceWrapper) PostTransactionLegacy(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "transactionId" -------------
-	var transactionId TransactionId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "transactionId", c.Param("transactionId"), &transactionId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter transactionId: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.PostTransactionLegacy(c, transactionId)
-}
-
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -2873,13 +1941,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
-	router.GET(options.BaseURL+"/accounts", wrapper.ListAccountsLegacy)
-	router.POST(options.BaseURL+"/accounts", wrapper.CreateAccountLegacy)
-	router.GET(options.BaseURL+"/accounts/summary", wrapper.GetAccountsSummaryLegacy)
-	router.GET(options.BaseURL+"/accounts/:accountId", wrapper.GetAccountLegacy)
-	router.PATCH(options.BaseURL+"/accounts/:accountId", wrapper.PatchAccountLegacy)
-	router.POST(options.BaseURL+"/accounts/:accountId/archive", wrapper.ArchiveAccountLegacy)
-	router.POST(options.BaseURL+"/accounts/:accountId/restore", wrapper.RestoreAccountLegacy)
 	router.GET(options.BaseURL+"/api/v1/accounts", wrapper.ListAccounts)
 	router.POST(options.BaseURL+"/api/v1/accounts", wrapper.CreateAccount)
 	router.GET(options.BaseURL+"/api/v1/accounts/summary", wrapper.GetAccountsSummary)
@@ -2887,6 +1948,18 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/v1/accounts/:accountId", wrapper.PatchAccount)
 	router.POST(options.BaseURL+"/api/v1/accounts/:accountId/archive", wrapper.ArchiveAccount)
 	router.POST(options.BaseURL+"/api/v1/accounts/:accountId/restore", wrapper.RestoreAccount)
+	router.POST(options.BaseURL+"/api/v1/auth/forgot-password", wrapper.ForgotPasswordAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/login", wrapper.LoginAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/logout", wrapper.LogoutAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/logout-all", wrapper.LogoutAllAuth)
+	router.GET(options.BaseURL+"/api/v1/auth/me", wrapper.MeAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/refresh", wrapper.RefreshAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/register", wrapper.RegisterAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/reset-password", wrapper.ResetPasswordAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/send-verification-email", wrapper.SendVerificationEmailAuth)
+	router.GET(options.BaseURL+"/api/v1/auth/sessions", wrapper.SessionsAuth)
+	router.DELETE(options.BaseURL+"/api/v1/auth/sessions/:sessionId", wrapper.RevokeSessionAuth)
+	router.POST(options.BaseURL+"/api/v1/auth/verify-email", wrapper.VerifyEmailAuth)
 	router.GET(options.BaseURL+"/api/v1/categories", wrapper.ListCategories)
 	router.POST(options.BaseURL+"/api/v1/categories", wrapper.CreateCategory)
 	router.DELETE(options.BaseURL+"/api/v1/categories/:categoryId", wrapper.DeleteCategory)
@@ -2910,30 +1983,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/api/v1/transactions/:transactionId/cancel", wrapper.CancelTransaction)
 	router.POST(options.BaseURL+"/api/v1/transactions/:transactionId/duplicate", wrapper.DuplicateTransaction)
 	router.POST(options.BaseURL+"/api/v1/transactions/:transactionId/post", wrapper.PostTransaction)
-	router.GET(options.BaseURL+"/categories", wrapper.ListCategoriesLegacy)
-	router.POST(options.BaseURL+"/categories", wrapper.CreateCategoryLegacy)
-	router.DELETE(options.BaseURL+"/categories/:categoryId", wrapper.DeleteCategoryLegacy)
-	router.GET(options.BaseURL+"/categories/:categoryId", wrapper.GetCategoryLegacy)
-	router.PATCH(options.BaseURL+"/categories/:categoryId", wrapper.PatchCategoryLegacy)
-	router.POST(options.BaseURL+"/categories/:categoryId/restore", wrapper.RestoreCategoryLegacy)
-	router.GET(options.BaseURL+"/categories/:categoryId/subcategories", wrapper.ListCategorySubcategoriesLegacy)
-	router.POST(options.BaseURL+"/categories/:categoryId/subcategories", wrapper.CreateSubcategoryLegacy)
-	router.GET(options.BaseURL+"/subcategories", wrapper.ListSubcategoriesLegacy)
-	router.DELETE(options.BaseURL+"/subcategories/:subcategoryId", wrapper.DeleteSubcategoryLegacy)
-	router.GET(options.BaseURL+"/subcategories/:subcategoryId", wrapper.GetSubcategoryLegacy)
-	router.PATCH(options.BaseURL+"/subcategories/:subcategoryId", wrapper.PatchSubcategoryLegacy)
-	router.POST(options.BaseURL+"/subcategories/:subcategoryId/restore", wrapper.RestoreSubcategoryLegacy)
-	router.GET(options.BaseURL+"/transactions", wrapper.ListTransactionsLegacy)
-	router.POST(options.BaseURL+"/transactions", wrapper.CreateTransactionLegacy)
-	router.PATCH(options.BaseURL+"/transactions/bulk", wrapper.PatchTransactionsBulkLegacy)
-	router.POST(options.BaseURL+"/transactions/bulk", wrapper.CreateTransactionsBulkLegacy)
-	router.DELETE(options.BaseURL+"/transactions/:transactionId", wrapper.DeleteTransactionLegacy)
-	router.GET(options.BaseURL+"/transactions/:transactionId", wrapper.GetTransactionLegacy)
-	router.PATCH(options.BaseURL+"/transactions/:transactionId", wrapper.PatchTransactionLegacy)
-	router.POST(options.BaseURL+"/transactions/:transactionId/cancel", wrapper.CancelTransactionLegacy)
-	router.POST(options.BaseURL+"/transactions/:transactionId/duplicate", wrapper.DuplicateTransactionLegacy)
-	router.POST(options.BaseURL+"/transactions/:transactionId/post", wrapper.PostTransactionLegacy)
 }
+
+type AuthErrorJSONResponse AuthErrorResponse
 
 type BusinessRuleErrorJSONResponse ErrorEnvelope
 
@@ -2946,369 +1998,6 @@ type NotFoundErrorJSONResponse ErrorEnvelope
 type UnauthorizedErrorJSONResponse ErrorEnvelope
 
 type ValidationErrorJSONResponse ErrorEnvelope
-
-type ListAccountsLegacyRequestObject struct {
-	Params ListAccountsLegacyParams
-}
-
-type ListAccountsLegacyResponseObject interface {
-	VisitListAccountsLegacyResponse(w http.ResponseWriter) error
-}
-
-type ListAccountsLegacy200JSONResponse PaginatedAccounts
-
-func (response ListAccountsLegacy200JSONResponse) VisitListAccountsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListAccountsLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response ListAccountsLegacy400JSONResponse) VisitListAccountsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListAccountsLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ListAccountsLegacy401JSONResponse) VisitListAccountsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListAccountsLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListAccountsLegacy500JSONResponse) VisitListAccountsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacyRequestObject struct {
-	Body *CreateAccountLegacyJSONRequestBody
-}
-
-type CreateAccountLegacyResponseObject interface {
-	VisitCreateAccountLegacyResponse(w http.ResponseWriter) error
-}
-
-type CreateAccountLegacy201JSONResponse Account
-
-func (response CreateAccountLegacy201JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CreateAccountLegacy400JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CreateAccountLegacy401JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CreateAccountLegacy409JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response CreateAccountLegacy422JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateAccountLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateAccountLegacy500JSONResponse) VisitCreateAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountsSummaryLegacyRequestObject struct {
-	Params GetAccountsSummaryLegacyParams
-}
-
-type GetAccountsSummaryLegacyResponseObject interface {
-	VisitGetAccountsSummaryLegacyResponse(w http.ResponseWriter) error
-}
-
-type GetAccountsSummaryLegacy200JSONResponse AccountSummary
-
-func (response GetAccountsSummaryLegacy200JSONResponse) VisitGetAccountsSummaryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountsSummaryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response GetAccountsSummaryLegacy400JSONResponse) VisitGetAccountsSummaryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountsSummaryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response GetAccountsSummaryLegacy401JSONResponse) VisitGetAccountsSummaryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountsSummaryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetAccountsSummaryLegacy500JSONResponse) VisitGetAccountsSummaryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountLegacyRequestObject struct {
-	AccountId AccountId `json:"accountId"`
-}
-
-type GetAccountLegacyResponseObject interface {
-	VisitGetAccountLegacyResponse(w http.ResponseWriter) error
-}
-
-type GetAccountLegacy200JSONResponse Account
-
-func (response GetAccountLegacy200JSONResponse) VisitGetAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response GetAccountLegacy400JSONResponse) VisitGetAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response GetAccountLegacy401JSONResponse) VisitGetAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response GetAccountLegacy404JSONResponse) VisitGetAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetAccountLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetAccountLegacy500JSONResponse) VisitGetAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacyRequestObject struct {
-	AccountId AccountId `json:"accountId"`
-	Body      *PatchAccountLegacyJSONRequestBody
-}
-
-type PatchAccountLegacyResponseObject interface {
-	VisitPatchAccountLegacyResponse(w http.ResponseWriter) error
-}
-
-type PatchAccountLegacy200JSONResponse Account
-
-func (response PatchAccountLegacy200JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PatchAccountLegacy400JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PatchAccountLegacy401JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PatchAccountLegacy404JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PatchAccountLegacy409JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchAccountLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PatchAccountLegacy500JSONResponse) VisitPatchAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ArchiveAccountLegacyRequestObject struct {
-	AccountId AccountId `json:"accountId"`
-}
-
-type ArchiveAccountLegacyResponseObject interface {
-	VisitArchiveAccountLegacyResponse(w http.ResponseWriter) error
-}
-
-type ArchiveAccountLegacy200JSONResponse Account
-
-func (response ArchiveAccountLegacy200JSONResponse) VisitArchiveAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ArchiveAccountLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ArchiveAccountLegacy401JSONResponse) VisitArchiveAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ArchiveAccountLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response ArchiveAccountLegacy404JSONResponse) VisitArchiveAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ArchiveAccountLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ArchiveAccountLegacy500JSONResponse) VisitArchiveAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreAccountLegacyRequestObject struct {
-	AccountId AccountId `json:"accountId"`
-}
-
-type RestoreAccountLegacyResponseObject interface {
-	VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error
-}
-
-type RestoreAccountLegacy200JSONResponse Account
-
-func (response RestoreAccountLegacy200JSONResponse) VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreAccountLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response RestoreAccountLegacy401JSONResponse) VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreAccountLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response RestoreAccountLegacy404JSONResponse) VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreAccountLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response RestoreAccountLegacy409JSONResponse) VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreAccountLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response RestoreAccountLegacy500JSONResponse) VisitRestoreAccountLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
 
 type ListAccountsRequestObject struct {
 	Params ListAccountsParams
@@ -3667,6 +2356,482 @@ func (response RestoreAccount409JSONResponse) VisitRestoreAccountResponse(w http
 type RestoreAccount500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response RestoreAccount500JSONResponse) VisitRestoreAccountResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ForgotPasswordAuthRequestObject struct {
+	Body *ForgotPasswordAuthJSONRequestBody
+}
+
+type ForgotPasswordAuthResponseObject interface {
+	VisitForgotPasswordAuthResponse(w http.ResponseWriter) error
+}
+
+type ForgotPasswordAuth200JSONResponse AuthOKResponse
+
+func (response ForgotPasswordAuth200JSONResponse) VisitForgotPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ForgotPasswordAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response ForgotPasswordAuth400JSONResponse) VisitForgotPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ForgotPasswordAuth500JSONResponse AuthErrorResponse
+
+func (response ForgotPasswordAuth500JSONResponse) VisitForgotPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginAuthRequestObject struct {
+	Body *LoginAuthJSONRequestBody
+}
+
+type LoginAuthResponseObject interface {
+	VisitLoginAuthResponse(w http.ResponseWriter) error
+}
+
+type LoginAuth200JSONResponse AuthResponse
+
+func (response LoginAuth200JSONResponse) VisitLoginAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response LoginAuth400JSONResponse) VisitLoginAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginAuth401JSONResponse AuthErrorResponse
+
+func (response LoginAuth401JSONResponse) VisitLoginAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginAuth500JSONResponse AuthErrorResponse
+
+func (response LoginAuth500JSONResponse) VisitLoginAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAuthRequestObject struct {
+}
+
+type LogoutAuthResponseObject interface {
+	VisitLogoutAuthResponse(w http.ResponseWriter) error
+}
+
+type LogoutAuth200JSONResponse AuthOKResponse
+
+func (response LogoutAuth200JSONResponse) VisitLogoutAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response LogoutAuth400JSONResponse) VisitLogoutAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAuth500JSONResponse AuthErrorResponse
+
+func (response LogoutAuth500JSONResponse) VisitLogoutAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAllAuthRequestObject struct {
+}
+
+type LogoutAllAuthResponseObject interface {
+	VisitLogoutAllAuthResponse(w http.ResponseWriter) error
+}
+
+type LogoutAllAuth200JSONResponse AuthOKResponse
+
+func (response LogoutAllAuth200JSONResponse) VisitLogoutAllAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAllAuth401JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response LogoutAllAuth401JSONResponse) VisitLogoutAllAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutAllAuth500JSONResponse AuthErrorResponse
+
+func (response LogoutAllAuth500JSONResponse) VisitLogoutAllAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MeAuthRequestObject struct {
+}
+
+type MeAuthResponseObject interface {
+	VisitMeAuthResponse(w http.ResponseWriter) error
+}
+
+type MeAuth200JSONResponse AuthMeResponse
+
+func (response MeAuth200JSONResponse) VisitMeAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MeAuth401JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response MeAuth401JSONResponse) VisitMeAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MeAuth500JSONResponse AuthErrorResponse
+
+func (response MeAuth500JSONResponse) VisitMeAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshAuthRequestObject struct {
+}
+
+type RefreshAuthResponseObject interface {
+	VisitRefreshAuthResponse(w http.ResponseWriter) error
+}
+
+type RefreshAuth200JSONResponse AuthResponse
+
+func (response RefreshAuth200JSONResponse) VisitRefreshAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response RefreshAuth400JSONResponse) VisitRefreshAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshAuth401JSONResponse AuthErrorResponse
+
+func (response RefreshAuth401JSONResponse) VisitRefreshAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RefreshAuth500JSONResponse AuthErrorResponse
+
+func (response RefreshAuth500JSONResponse) VisitRefreshAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RegisterAuthRequestObject struct {
+	Body *RegisterAuthJSONRequestBody
+}
+
+type RegisterAuthResponseObject interface {
+	VisitRegisterAuthResponse(w http.ResponseWriter) error
+}
+
+type RegisterAuth201JSONResponse AuthResponse
+
+func (response RegisterAuth201JSONResponse) VisitRegisterAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RegisterAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response RegisterAuth400JSONResponse) VisitRegisterAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RegisterAuth409JSONResponse AuthErrorResponse
+
+func (response RegisterAuth409JSONResponse) VisitRegisterAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RegisterAuth500JSONResponse AuthErrorResponse
+
+func (response RegisterAuth500JSONResponse) VisitRegisterAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResetPasswordAuthRequestObject struct {
+	Body *ResetPasswordAuthJSONRequestBody
+}
+
+type ResetPasswordAuthResponseObject interface {
+	VisitResetPasswordAuthResponse(w http.ResponseWriter) error
+}
+
+type ResetPasswordAuth200JSONResponse AuthOKResponse
+
+func (response ResetPasswordAuth200JSONResponse) VisitResetPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResetPasswordAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response ResetPasswordAuth400JSONResponse) VisitResetPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResetPasswordAuth401JSONResponse AuthErrorResponse
+
+func (response ResetPasswordAuth401JSONResponse) VisitResetPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResetPasswordAuth500JSONResponse AuthErrorResponse
+
+func (response ResetPasswordAuth500JSONResponse) VisitResetPasswordAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendVerificationEmailAuthRequestObject struct {
+}
+
+type SendVerificationEmailAuthResponseObject interface {
+	VisitSendVerificationEmailAuthResponse(w http.ResponseWriter) error
+}
+
+type SendVerificationEmailAuth200JSONResponse AuthOKResponse
+
+func (response SendVerificationEmailAuth200JSONResponse) VisitSendVerificationEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendVerificationEmailAuth401JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response SendVerificationEmailAuth401JSONResponse) VisitSendVerificationEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendVerificationEmailAuth500JSONResponse AuthErrorResponse
+
+func (response SendVerificationEmailAuth500JSONResponse) VisitSendVerificationEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SessionsAuthRequestObject struct {
+}
+
+type SessionsAuthResponseObject interface {
+	VisitSessionsAuthResponse(w http.ResponseWriter) error
+}
+
+type SessionsAuth200JSONResponse AuthSessionsResponse
+
+func (response SessionsAuth200JSONResponse) VisitSessionsAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SessionsAuth401JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response SessionsAuth401JSONResponse) VisitSessionsAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SessionsAuth500JSONResponse AuthErrorResponse
+
+func (response SessionsAuth500JSONResponse) VisitSessionsAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RevokeSessionAuthRequestObject struct {
+	SessionId SessionId `json:"sessionId"`
+}
+
+type RevokeSessionAuthResponseObject interface {
+	VisitRevokeSessionAuthResponse(w http.ResponseWriter) error
+}
+
+type RevokeSessionAuth204Response struct {
+}
+
+func (response RevokeSessionAuth204Response) VisitRevokeSessionAuthResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeSessionAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response RevokeSessionAuth400JSONResponse) VisitRevokeSessionAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RevokeSessionAuth401JSONResponse AuthErrorResponse
+
+func (response RevokeSessionAuth401JSONResponse) VisitRevokeSessionAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RevokeSessionAuth404JSONResponse AuthErrorResponse
+
+func (response RevokeSessionAuth404JSONResponse) VisitRevokeSessionAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RevokeSessionAuth500JSONResponse AuthErrorResponse
+
+func (response RevokeSessionAuth500JSONResponse) VisitRevokeSessionAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyEmailAuthRequestObject struct {
+	Body *VerifyEmailAuthJSONRequestBody
+}
+
+type VerifyEmailAuthResponseObject interface {
+	VisitVerifyEmailAuthResponse(w http.ResponseWriter) error
+}
+
+type VerifyEmailAuth200JSONResponse AuthOKResponse
+
+func (response VerifyEmailAuth200JSONResponse) VisitVerifyEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyEmailAuth400JSONResponse struct{ AuthErrorJSONResponse }
+
+func (response VerifyEmailAuth400JSONResponse) VisitVerifyEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyEmailAuth401JSONResponse AuthErrorResponse
+
+func (response VerifyEmailAuth401JSONResponse) VisitVerifyEmailAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyEmailAuth500JSONResponse AuthErrorResponse
+
+func (response VerifyEmailAuth500JSONResponse) VisitVerifyEmailAuthResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -5008,1364 +4173,8 @@ func (response PostTransaction500JSONResponse) VisitPostTransactionResponse(w ht
 	return json.NewEncoder(w).Encode(response)
 }
 
-type ListCategoriesLegacyRequestObject struct {
-	Params ListCategoriesLegacyParams
-}
-
-type ListCategoriesLegacyResponseObject interface {
-	VisitListCategoriesLegacyResponse(w http.ResponseWriter) error
-}
-
-type ListCategoriesLegacy200JSONResponse PaginatedCategories
-
-func (response ListCategoriesLegacy200JSONResponse) VisitListCategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategoriesLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response ListCategoriesLegacy400JSONResponse) VisitListCategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategoriesLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ListCategoriesLegacy401JSONResponse) VisitListCategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategoriesLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListCategoriesLegacy500JSONResponse) VisitListCategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateCategoryLegacyRequestObject struct {
-	Body *CreateCategoryLegacyJSONRequestBody
-}
-
-type CreateCategoryLegacyResponseObject interface {
-	VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type CreateCategoryLegacy201JSONResponse Category
-
-func (response CreateCategoryLegacy201JSONResponse) VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateCategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CreateCategoryLegacy400JSONResponse) VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateCategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CreateCategoryLegacy401JSONResponse) VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateCategoryLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CreateCategoryLegacy409JSONResponse) VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateCategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateCategoryLegacy500JSONResponse) VisitCreateCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteCategoryLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-}
-
-type DeleteCategoryLegacyResponseObject interface {
-	VisitDeleteCategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type DeleteCategoryLegacy200JSONResponse Category
-
-func (response DeleteCategoryLegacy200JSONResponse) VisitDeleteCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteCategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response DeleteCategoryLegacy401JSONResponse) VisitDeleteCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteCategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response DeleteCategoryLegacy404JSONResponse) VisitDeleteCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteCategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response DeleteCategoryLegacy500JSONResponse) VisitDeleteCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetCategoryLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-	Params     GetCategoryLegacyParams
-}
-
-type GetCategoryLegacyResponseObject interface {
-	VisitGetCategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type GetCategoryLegacy200JSONResponse Category
-
-func (response GetCategoryLegacy200JSONResponse) VisitGetCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetCategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response GetCategoryLegacy400JSONResponse) VisitGetCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetCategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response GetCategoryLegacy401JSONResponse) VisitGetCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetCategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response GetCategoryLegacy404JSONResponse) VisitGetCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetCategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetCategoryLegacy500JSONResponse) VisitGetCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-	Body       *PatchCategoryLegacyJSONRequestBody
-}
-
-type PatchCategoryLegacyResponseObject interface {
-	VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type PatchCategoryLegacy200JSONResponse Category
-
-func (response PatchCategoryLegacy200JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PatchCategoryLegacy400JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PatchCategoryLegacy401JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PatchCategoryLegacy404JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PatchCategoryLegacy409JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchCategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PatchCategoryLegacy500JSONResponse) VisitPatchCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreCategoryLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-}
-
-type RestoreCategoryLegacyResponseObject interface {
-	VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type RestoreCategoryLegacy200JSONResponse Category
-
-func (response RestoreCategoryLegacy200JSONResponse) VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreCategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response RestoreCategoryLegacy401JSONResponse) VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreCategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response RestoreCategoryLegacy404JSONResponse) VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreCategoryLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response RestoreCategoryLegacy409JSONResponse) VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreCategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response RestoreCategoryLegacy500JSONResponse) VisitRestoreCategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategorySubcategoriesLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-	Params     ListCategorySubcategoriesLegacyParams
-}
-
-type ListCategorySubcategoriesLegacyResponseObject interface {
-	VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error
-}
-
-type ListCategorySubcategoriesLegacy200JSONResponse PaginatedSubcategories
-
-func (response ListCategorySubcategoriesLegacy200JSONResponse) VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategorySubcategoriesLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response ListCategorySubcategoriesLegacy400JSONResponse) VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategorySubcategoriesLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ListCategorySubcategoriesLegacy401JSONResponse) VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategorySubcategoriesLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response ListCategorySubcategoriesLegacy404JSONResponse) VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListCategorySubcategoriesLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListCategorySubcategoriesLegacy500JSONResponse) VisitListCategorySubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacyRequestObject struct {
-	CategoryId CategoryId `json:"categoryId"`
-	Body       *CreateSubcategoryLegacyJSONRequestBody
-}
-
-type CreateSubcategoryLegacyResponseObject interface {
-	VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type CreateSubcategoryLegacy201JSONResponse Subcategory
-
-func (response CreateSubcategoryLegacy201JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy400JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy401JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy404JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy409JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy422JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateSubcategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateSubcategoryLegacy500JSONResponse) VisitCreateSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListSubcategoriesLegacyRequestObject struct {
-	Params ListSubcategoriesLegacyParams
-}
-
-type ListSubcategoriesLegacyResponseObject interface {
-	VisitListSubcategoriesLegacyResponse(w http.ResponseWriter) error
-}
-
-type ListSubcategoriesLegacy200JSONResponse PaginatedSubcategories
-
-func (response ListSubcategoriesLegacy200JSONResponse) VisitListSubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListSubcategoriesLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response ListSubcategoriesLegacy400JSONResponse) VisitListSubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListSubcategoriesLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ListSubcategoriesLegacy401JSONResponse) VisitListSubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListSubcategoriesLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListSubcategoriesLegacy500JSONResponse) VisitListSubcategoriesLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteSubcategoryLegacyRequestObject struct {
-	SubcategoryId SubcategoryId `json:"subcategoryId"`
-}
-
-type DeleteSubcategoryLegacyResponseObject interface {
-	VisitDeleteSubcategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type DeleteSubcategoryLegacy200JSONResponse Subcategory
-
-func (response DeleteSubcategoryLegacy200JSONResponse) VisitDeleteSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteSubcategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response DeleteSubcategoryLegacy401JSONResponse) VisitDeleteSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteSubcategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response DeleteSubcategoryLegacy404JSONResponse) VisitDeleteSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteSubcategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response DeleteSubcategoryLegacy500JSONResponse) VisitDeleteSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetSubcategoryLegacyRequestObject struct {
-	SubcategoryId SubcategoryId `json:"subcategoryId"`
-}
-
-type GetSubcategoryLegacyResponseObject interface {
-	VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type GetSubcategoryLegacy200JSONResponse Subcategory
-
-func (response GetSubcategoryLegacy200JSONResponse) VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetSubcategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response GetSubcategoryLegacy400JSONResponse) VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetSubcategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response GetSubcategoryLegacy401JSONResponse) VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetSubcategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response GetSubcategoryLegacy404JSONResponse) VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetSubcategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetSubcategoryLegacy500JSONResponse) VisitGetSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacyRequestObject struct {
-	SubcategoryId SubcategoryId `json:"subcategoryId"`
-	Body          *PatchSubcategoryLegacyJSONRequestBody
-}
-
-type PatchSubcategoryLegacyResponseObject interface {
-	VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type PatchSubcategoryLegacy200JSONResponse Subcategory
-
-func (response PatchSubcategoryLegacy200JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PatchSubcategoryLegacy400JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PatchSubcategoryLegacy401JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PatchSubcategoryLegacy404JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PatchSubcategoryLegacy409JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchSubcategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PatchSubcategoryLegacy500JSONResponse) VisitPatchSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreSubcategoryLegacyRequestObject struct {
-	SubcategoryId SubcategoryId `json:"subcategoryId"`
-}
-
-type RestoreSubcategoryLegacyResponseObject interface {
-	VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error
-}
-
-type RestoreSubcategoryLegacy200JSONResponse Subcategory
-
-func (response RestoreSubcategoryLegacy200JSONResponse) VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreSubcategoryLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response RestoreSubcategoryLegacy401JSONResponse) VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreSubcategoryLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response RestoreSubcategoryLegacy404JSONResponse) VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreSubcategoryLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response RestoreSubcategoryLegacy422JSONResponse) VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type RestoreSubcategoryLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response RestoreSubcategoryLegacy500JSONResponse) VisitRestoreSubcategoryLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListTransactionsLegacyRequestObject struct {
-	Params ListTransactionsLegacyParams
-}
-
-type ListTransactionsLegacyResponseObject interface {
-	VisitListTransactionsLegacyResponse(w http.ResponseWriter) error
-}
-
-type ListTransactionsLegacy200JSONResponse PaginatedTransactions
-
-func (response ListTransactionsLegacy200JSONResponse) VisitListTransactionsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListTransactionsLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response ListTransactionsLegacy400JSONResponse) VisitListTransactionsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListTransactionsLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response ListTransactionsLegacy401JSONResponse) VisitListTransactionsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ListTransactionsLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListTransactionsLegacy500JSONResponse) VisitListTransactionsLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacyRequestObject struct {
-	Body *CreateTransactionLegacyJSONRequestBody
-}
-
-type CreateTransactionLegacyResponseObject interface {
-	VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type CreateTransactionLegacy201JSONResponse Transaction
-
-func (response CreateTransactionLegacy201JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CreateTransactionLegacy400JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CreateTransactionLegacy401JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response CreateTransactionLegacy404JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CreateTransactionLegacy409JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response CreateTransactionLegacy422JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateTransactionLegacy500JSONResponse) VisitCreateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacyRequestObject struct {
-	Body *PatchTransactionsBulkLegacyJSONRequestBody
-}
-
-type PatchTransactionsBulkLegacyResponseObject interface {
-	VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error
-}
-
-type PatchTransactionsBulkLegacy200JSONResponse TransactionItemsResponse
-
-func (response PatchTransactionsBulkLegacy200JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy400JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy401JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy404JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy409JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy422JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionsBulkLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PatchTransactionsBulkLegacy500JSONResponse) VisitPatchTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacyRequestObject struct {
-	Body *CreateTransactionsBulkLegacyJSONRequestBody
-}
-
-type CreateTransactionsBulkLegacyResponseObject interface {
-	VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error
-}
-
-type CreateTransactionsBulkLegacy201JSONResponse TransactionItemsResponse
-
-func (response CreateTransactionsBulkLegacy201JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy400JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy401JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy404JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy409JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy422JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CreateTransactionsBulkLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateTransactionsBulkLegacy500JSONResponse) VisitCreateTransactionsBulkLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-}
-
-type DeleteTransactionLegacyResponseObject interface {
-	VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type DeleteTransactionLegacy204Response struct {
-}
-
-func (response DeleteTransactionLegacy204Response) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
-}
-
-type DeleteTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response DeleteTransactionLegacy400JSONResponse) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response DeleteTransactionLegacy401JSONResponse) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response DeleteTransactionLegacy404JSONResponse) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response DeleteTransactionLegacy409JSONResponse) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DeleteTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response DeleteTransactionLegacy500JSONResponse) VisitDeleteTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-}
-
-type GetTransactionLegacyResponseObject interface {
-	VisitGetTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type GetTransactionLegacy200JSONResponse Transaction
-
-func (response GetTransactionLegacy200JSONResponse) VisitGetTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response GetTransactionLegacy400JSONResponse) VisitGetTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response GetTransactionLegacy401JSONResponse) VisitGetTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response GetTransactionLegacy404JSONResponse) VisitGetTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetTransactionLegacy500JSONResponse) VisitGetTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-	Body          *PatchTransactionLegacyJSONRequestBody
-}
-
-type PatchTransactionLegacyResponseObject interface {
-	VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type PatchTransactionLegacy200JSONResponse Transaction
-
-func (response PatchTransactionLegacy200JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PatchTransactionLegacy400JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PatchTransactionLegacy401JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PatchTransactionLegacy404JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PatchTransactionLegacy409JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response PatchTransactionLegacy422JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PatchTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PatchTransactionLegacy500JSONResponse) VisitPatchTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-	Body          *CancelTransactionLegacyJSONRequestBody
-}
-
-type CancelTransactionLegacyResponseObject interface {
-	VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type CancelTransactionLegacy200JSONResponse Transaction
-
-func (response CancelTransactionLegacy200JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response CancelTransactionLegacy400JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response CancelTransactionLegacy401JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response CancelTransactionLegacy404JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response CancelTransactionLegacy409JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type CancelTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CancelTransactionLegacy500JSONResponse) VisitCancelTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-	Body          *DuplicateTransactionLegacyJSONRequestBody
-}
-
-type DuplicateTransactionLegacyResponseObject interface {
-	VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type DuplicateTransactionLegacy201JSONResponse Transaction
-
-func (response DuplicateTransactionLegacy201JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy400JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy401JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy404JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy409JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy422JSONResponse struct{ BusinessRuleErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy422JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type DuplicateTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response DuplicateTransactionLegacy500JSONResponse) VisitDuplicateTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacyRequestObject struct {
-	TransactionId TransactionId `json:"transactionId"`
-	Body          *PostTransactionLegacyJSONRequestBody
-}
-
-type PostTransactionLegacyResponseObject interface {
-	VisitPostTransactionLegacyResponse(w http.ResponseWriter) error
-}
-
-type PostTransactionLegacy200JSONResponse Transaction
-
-func (response PostTransactionLegacy200JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacy400JSONResponse struct{ ValidationErrorJSONResponse }
-
-func (response PostTransactionLegacy400JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacy401JSONResponse struct{ UnauthorizedErrorJSONResponse }
-
-func (response PostTransactionLegacy401JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacy404JSONResponse struct{ NotFoundErrorJSONResponse }
-
-func (response PostTransactionLegacy404JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacy409JSONResponse struct{ ConflictErrorJSONResponse }
-
-func (response PostTransactionLegacy409JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PostTransactionLegacy500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PostTransactionLegacy500JSONResponse) VisitPostTransactionLegacyResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// GET operation
-	// (GET /accounts)
-	ListAccountsLegacy(ctx context.Context, request ListAccountsLegacyRequestObject) (ListAccountsLegacyResponseObject, error)
-	// POST operation
-	// (POST /accounts)
-	CreateAccountLegacy(ctx context.Context, request CreateAccountLegacyRequestObject) (CreateAccountLegacyResponseObject, error)
-	// GET operation
-	// (GET /accounts/summary)
-	GetAccountsSummaryLegacy(ctx context.Context, request GetAccountsSummaryLegacyRequestObject) (GetAccountsSummaryLegacyResponseObject, error)
-	// GET operation
-	// (GET /accounts/{accountId})
-	GetAccountLegacy(ctx context.Context, request GetAccountLegacyRequestObject) (GetAccountLegacyResponseObject, error)
-	// PATCH operation
-	// (PATCH /accounts/{accountId})
-	PatchAccountLegacy(ctx context.Context, request PatchAccountLegacyRequestObject) (PatchAccountLegacyResponseObject, error)
-	// POST operation
-	// (POST /accounts/{accountId}/archive)
-	ArchiveAccountLegacy(ctx context.Context, request ArchiveAccountLegacyRequestObject) (ArchiveAccountLegacyResponseObject, error)
-	// POST operation
-	// (POST /accounts/{accountId}/restore)
-	RestoreAccountLegacy(ctx context.Context, request RestoreAccountLegacyRequestObject) (RestoreAccountLegacyResponseObject, error)
 	// GET operation
 	// (GET /api/v1/accounts)
 	ListAccounts(ctx context.Context, request ListAccountsRequestObject) (ListAccountsResponseObject, error)
@@ -6387,6 +4196,42 @@ type StrictServerInterface interface {
 	// POST operation
 	// (POST /api/v1/accounts/{accountId}/restore)
 	RestoreAccount(ctx context.Context, request RestoreAccountRequestObject) (RestoreAccountResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/forgot-password)
+	ForgotPasswordAuth(ctx context.Context, request ForgotPasswordAuthRequestObject) (ForgotPasswordAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/login)
+	LoginAuth(ctx context.Context, request LoginAuthRequestObject) (LoginAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/logout)
+	LogoutAuth(ctx context.Context, request LogoutAuthRequestObject) (LogoutAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/logout-all)
+	LogoutAllAuth(ctx context.Context, request LogoutAllAuthRequestObject) (LogoutAllAuthResponseObject, error)
+	// GET operation
+	// (GET /api/v1/auth/me)
+	MeAuth(ctx context.Context, request MeAuthRequestObject) (MeAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/refresh)
+	RefreshAuth(ctx context.Context, request RefreshAuthRequestObject) (RefreshAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/register)
+	RegisterAuth(ctx context.Context, request RegisterAuthRequestObject) (RegisterAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/reset-password)
+	ResetPasswordAuth(ctx context.Context, request ResetPasswordAuthRequestObject) (ResetPasswordAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/send-verification-email)
+	SendVerificationEmailAuth(ctx context.Context, request SendVerificationEmailAuthRequestObject) (SendVerificationEmailAuthResponseObject, error)
+	// GET operation
+	// (GET /api/v1/auth/sessions)
+	SessionsAuth(ctx context.Context, request SessionsAuthRequestObject) (SessionsAuthResponseObject, error)
+	// DELETE operation
+	// (DELETE /api/v1/auth/sessions/{sessionId})
+	RevokeSessionAuth(ctx context.Context, request RevokeSessionAuthRequestObject) (RevokeSessionAuthResponseObject, error)
+	// POST operation
+	// (POST /api/v1/auth/verify-email)
+	VerifyEmailAuth(ctx context.Context, request VerifyEmailAuthRequestObject) (VerifyEmailAuthResponseObject, error)
 	// GET operation
 	// (GET /api/v1/categories)
 	ListCategories(ctx context.Context, request ListCategoriesRequestObject) (ListCategoriesResponseObject, error)
@@ -6456,75 +4301,6 @@ type StrictServerInterface interface {
 	// POST operation
 	// (POST /api/v1/transactions/{transactionId}/post)
 	PostTransaction(ctx context.Context, request PostTransactionRequestObject) (PostTransactionResponseObject, error)
-	// GET operation
-	// (GET /categories)
-	ListCategoriesLegacy(ctx context.Context, request ListCategoriesLegacyRequestObject) (ListCategoriesLegacyResponseObject, error)
-	// POST operation
-	// (POST /categories)
-	CreateCategoryLegacy(ctx context.Context, request CreateCategoryLegacyRequestObject) (CreateCategoryLegacyResponseObject, error)
-	// DELETE operation
-	// (DELETE /categories/{categoryId})
-	DeleteCategoryLegacy(ctx context.Context, request DeleteCategoryLegacyRequestObject) (DeleteCategoryLegacyResponseObject, error)
-	// GET operation
-	// (GET /categories/{categoryId})
-	GetCategoryLegacy(ctx context.Context, request GetCategoryLegacyRequestObject) (GetCategoryLegacyResponseObject, error)
-	// PATCH operation
-	// (PATCH /categories/{categoryId})
-	PatchCategoryLegacy(ctx context.Context, request PatchCategoryLegacyRequestObject) (PatchCategoryLegacyResponseObject, error)
-	// POST operation
-	// (POST /categories/{categoryId}/restore)
-	RestoreCategoryLegacy(ctx context.Context, request RestoreCategoryLegacyRequestObject) (RestoreCategoryLegacyResponseObject, error)
-	// GET operation
-	// (GET /categories/{categoryId}/subcategories)
-	ListCategorySubcategoriesLegacy(ctx context.Context, request ListCategorySubcategoriesLegacyRequestObject) (ListCategorySubcategoriesLegacyResponseObject, error)
-	// POST operation
-	// (POST /categories/{categoryId}/subcategories)
-	CreateSubcategoryLegacy(ctx context.Context, request CreateSubcategoryLegacyRequestObject) (CreateSubcategoryLegacyResponseObject, error)
-	// GET operation
-	// (GET /subcategories)
-	ListSubcategoriesLegacy(ctx context.Context, request ListSubcategoriesLegacyRequestObject) (ListSubcategoriesLegacyResponseObject, error)
-	// DELETE operation
-	// (DELETE /subcategories/{subcategoryId})
-	DeleteSubcategoryLegacy(ctx context.Context, request DeleteSubcategoryLegacyRequestObject) (DeleteSubcategoryLegacyResponseObject, error)
-	// GET operation
-	// (GET /subcategories/{subcategoryId})
-	GetSubcategoryLegacy(ctx context.Context, request GetSubcategoryLegacyRequestObject) (GetSubcategoryLegacyResponseObject, error)
-	// PATCH operation
-	// (PATCH /subcategories/{subcategoryId})
-	PatchSubcategoryLegacy(ctx context.Context, request PatchSubcategoryLegacyRequestObject) (PatchSubcategoryLegacyResponseObject, error)
-	// POST operation
-	// (POST /subcategories/{subcategoryId}/restore)
-	RestoreSubcategoryLegacy(ctx context.Context, request RestoreSubcategoryLegacyRequestObject) (RestoreSubcategoryLegacyResponseObject, error)
-	// GET operation
-	// (GET /transactions)
-	ListTransactionsLegacy(ctx context.Context, request ListTransactionsLegacyRequestObject) (ListTransactionsLegacyResponseObject, error)
-	// POST operation
-	// (POST /transactions)
-	CreateTransactionLegacy(ctx context.Context, request CreateTransactionLegacyRequestObject) (CreateTransactionLegacyResponseObject, error)
-	// PATCH operation
-	// (PATCH /transactions/bulk)
-	PatchTransactionsBulkLegacy(ctx context.Context, request PatchTransactionsBulkLegacyRequestObject) (PatchTransactionsBulkLegacyResponseObject, error)
-	// POST operation
-	// (POST /transactions/bulk)
-	CreateTransactionsBulkLegacy(ctx context.Context, request CreateTransactionsBulkLegacyRequestObject) (CreateTransactionsBulkLegacyResponseObject, error)
-	// DELETE operation
-	// (DELETE /transactions/{transactionId})
-	DeleteTransactionLegacy(ctx context.Context, request DeleteTransactionLegacyRequestObject) (DeleteTransactionLegacyResponseObject, error)
-	// GET operation
-	// (GET /transactions/{transactionId})
-	GetTransactionLegacy(ctx context.Context, request GetTransactionLegacyRequestObject) (GetTransactionLegacyResponseObject, error)
-	// PATCH operation
-	// (PATCH /transactions/{transactionId})
-	PatchTransactionLegacy(ctx context.Context, request PatchTransactionLegacyRequestObject) (PatchTransactionLegacyResponseObject, error)
-	// POST operation
-	// (POST /transactions/{transactionId}/cancel)
-	CancelTransactionLegacy(ctx context.Context, request CancelTransactionLegacyRequestObject) (CancelTransactionLegacyResponseObject, error)
-	// POST operation
-	// (POST /transactions/{transactionId}/duplicate)
-	DuplicateTransactionLegacy(ctx context.Context, request DuplicateTransactionLegacyRequestObject) (DuplicateTransactionLegacyResponseObject, error)
-	// POST operation
-	// (POST /transactions/{transactionId}/post)
-	PostTransactionLegacy(ctx context.Context, request PostTransactionLegacyRequestObject) (PostTransactionLegacyResponseObject, error)
 }
 
 type StrictHandlerFunc = strictgin.StrictGinHandlerFunc
@@ -6537,209 +4313,6 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
-}
-
-// ListAccountsLegacy operation middleware
-func (sh *strictHandler) ListAccountsLegacy(ctx *gin.Context, params ListAccountsLegacyParams) {
-	var request ListAccountsLegacyRequestObject
-
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListAccountsLegacy(ctx, request.(ListAccountsLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListAccountsLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ListAccountsLegacyResponseObject); ok {
-		if err := validResponse.VisitListAccountsLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateAccountLegacy operation middleware
-func (sh *strictHandler) CreateAccountLegacy(ctx *gin.Context) {
-	var request CreateAccountLegacyRequestObject
-
-	var body CreateAccountLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateAccountLegacy(ctx, request.(CreateAccountLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateAccountLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CreateAccountLegacyResponseObject); ok {
-		if err := validResponse.VisitCreateAccountLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetAccountsSummaryLegacy operation middleware
-func (sh *strictHandler) GetAccountsSummaryLegacy(ctx *gin.Context, params GetAccountsSummaryLegacyParams) {
-	var request GetAccountsSummaryLegacyRequestObject
-
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetAccountsSummaryLegacy(ctx, request.(GetAccountsSummaryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetAccountsSummaryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(GetAccountsSummaryLegacyResponseObject); ok {
-		if err := validResponse.VisitGetAccountsSummaryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetAccountLegacy operation middleware
-func (sh *strictHandler) GetAccountLegacy(ctx *gin.Context, accountId AccountId) {
-	var request GetAccountLegacyRequestObject
-
-	request.AccountId = accountId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetAccountLegacy(ctx, request.(GetAccountLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetAccountLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(GetAccountLegacyResponseObject); ok {
-		if err := validResponse.VisitGetAccountLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PatchAccountLegacy operation middleware
-func (sh *strictHandler) PatchAccountLegacy(ctx *gin.Context, accountId AccountId) {
-	var request PatchAccountLegacyRequestObject
-
-	request.AccountId = accountId
-
-	var body PatchAccountLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PatchAccountLegacy(ctx, request.(PatchAccountLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PatchAccountLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PatchAccountLegacyResponseObject); ok {
-		if err := validResponse.VisitPatchAccountLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ArchiveAccountLegacy operation middleware
-func (sh *strictHandler) ArchiveAccountLegacy(ctx *gin.Context, accountId AccountId) {
-	var request ArchiveAccountLegacyRequestObject
-
-	request.AccountId = accountId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ArchiveAccountLegacy(ctx, request.(ArchiveAccountLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ArchiveAccountLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ArchiveAccountLegacyResponseObject); ok {
-		if err := validResponse.VisitArchiveAccountLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// RestoreAccountLegacy operation middleware
-func (sh *strictHandler) RestoreAccountLegacy(ctx *gin.Context, accountId AccountId) {
-	var request RestoreAccountLegacyRequestObject
-
-	request.AccountId = accountId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.RestoreAccountLegacy(ctx, request.(RestoreAccountLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RestoreAccountLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(RestoreAccountLegacyResponseObject); ok {
-		if err := validResponse.VisitRestoreAccountLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
 }
 
 // ListAccounts operation middleware
@@ -6938,6 +4511,348 @@ func (sh *strictHandler) RestoreAccount(ctx *gin.Context, accountId AccountId) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(RestoreAccountResponseObject); ok {
 		if err := validResponse.VisitRestoreAccountResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ForgotPasswordAuth operation middleware
+func (sh *strictHandler) ForgotPasswordAuth(ctx *gin.Context) {
+	var request ForgotPasswordAuthRequestObject
+
+	var body ForgotPasswordAuthJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ForgotPasswordAuth(ctx, request.(ForgotPasswordAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ForgotPasswordAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ForgotPasswordAuthResponseObject); ok {
+		if err := validResponse.VisitForgotPasswordAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LoginAuth operation middleware
+func (sh *strictHandler) LoginAuth(ctx *gin.Context) {
+	var request LoginAuthRequestObject
+
+	var body LoginAuthJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.LoginAuth(ctx, request.(LoginAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LoginAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(LoginAuthResponseObject); ok {
+		if err := validResponse.VisitLoginAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LogoutAuth operation middleware
+func (sh *strictHandler) LogoutAuth(ctx *gin.Context) {
+	var request LogoutAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.LogoutAuth(ctx, request.(LogoutAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LogoutAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(LogoutAuthResponseObject); ok {
+		if err := validResponse.VisitLogoutAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LogoutAllAuth operation middleware
+func (sh *strictHandler) LogoutAllAuth(ctx *gin.Context) {
+	var request LogoutAllAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.LogoutAllAuth(ctx, request.(LogoutAllAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LogoutAllAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(LogoutAllAuthResponseObject); ok {
+		if err := validResponse.VisitLogoutAllAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MeAuth operation middleware
+func (sh *strictHandler) MeAuth(ctx *gin.Context) {
+	var request MeAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.MeAuth(ctx, request.(MeAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MeAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(MeAuthResponseObject); ok {
+		if err := validResponse.VisitMeAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshAuth operation middleware
+func (sh *strictHandler) RefreshAuth(ctx *gin.Context) {
+	var request RefreshAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshAuth(ctx, request.(RefreshAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RefreshAuthResponseObject); ok {
+		if err := validResponse.VisitRefreshAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegisterAuth operation middleware
+func (sh *strictHandler) RegisterAuth(ctx *gin.Context) {
+	var request RegisterAuthRequestObject
+
+	var body RegisterAuthJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RegisterAuth(ctx, request.(RegisterAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegisterAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RegisterAuthResponseObject); ok {
+		if err := validResponse.VisitRegisterAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResetPasswordAuth operation middleware
+func (sh *strictHandler) ResetPasswordAuth(ctx *gin.Context) {
+	var request ResetPasswordAuthRequestObject
+
+	var body ResetPasswordAuthJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetPasswordAuth(ctx, request.(ResetPasswordAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetPasswordAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(ResetPasswordAuthResponseObject); ok {
+		if err := validResponse.VisitResetPasswordAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendVerificationEmailAuth operation middleware
+func (sh *strictHandler) SendVerificationEmailAuth(ctx *gin.Context) {
+	var request SendVerificationEmailAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SendVerificationEmailAuth(ctx, request.(SendVerificationEmailAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendVerificationEmailAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(SendVerificationEmailAuthResponseObject); ok {
+		if err := validResponse.VisitSendVerificationEmailAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SessionsAuth operation middleware
+func (sh *strictHandler) SessionsAuth(ctx *gin.Context) {
+	var request SessionsAuthRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SessionsAuth(ctx, request.(SessionsAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SessionsAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(SessionsAuthResponseObject); ok {
+		if err := validResponse.VisitSessionsAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeSessionAuth operation middleware
+func (sh *strictHandler) RevokeSessionAuth(ctx *gin.Context, sessionId SessionId) {
+	var request RevokeSessionAuthRequestObject
+
+	request.SessionId = sessionId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeSessionAuth(ctx, request.(RevokeSessionAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeSessionAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RevokeSessionAuthResponseObject); ok {
+		if err := validResponse.VisitRevokeSessionAuthResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyEmailAuth operation middleware
+func (sh *strictHandler) VerifyEmailAuth(ctx *gin.Context) {
+	var request VerifyEmailAuthRequestObject
+
+	var body VerifyEmailAuthJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyEmailAuth(ctx, request.(VerifyEmailAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyEmailAuth")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(VerifyEmailAuthResponseObject); ok {
+		if err := validResponse.VisitVerifyEmailAuthResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -7648,767 +5563,67 @@ func (sh *strictHandler) PostTransaction(ctx *gin.Context, transactionId Transac
 	}
 }
 
-// ListCategoriesLegacy operation middleware
-func (sh *strictHandler) ListCategoriesLegacy(ctx *gin.Context, params ListCategoriesLegacyParams) {
-	var request ListCategoriesLegacyRequestObject
-
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListCategoriesLegacy(ctx, request.(ListCategoriesLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListCategoriesLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ListCategoriesLegacyResponseObject); ok {
-		if err := validResponse.VisitListCategoriesLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateCategoryLegacy operation middleware
-func (sh *strictHandler) CreateCategoryLegacy(ctx *gin.Context) {
-	var request CreateCategoryLegacyRequestObject
-
-	var body CreateCategoryLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateCategoryLegacy(ctx, request.(CreateCategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateCategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CreateCategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitCreateCategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteCategoryLegacy operation middleware
-func (sh *strictHandler) DeleteCategoryLegacy(ctx *gin.Context, categoryId CategoryId) {
-	var request DeleteCategoryLegacyRequestObject
-
-	request.CategoryId = categoryId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteCategoryLegacy(ctx, request.(DeleteCategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteCategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(DeleteCategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitDeleteCategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetCategoryLegacy operation middleware
-func (sh *strictHandler) GetCategoryLegacy(ctx *gin.Context, categoryId CategoryId, params GetCategoryLegacyParams) {
-	var request GetCategoryLegacyRequestObject
-
-	request.CategoryId = categoryId
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetCategoryLegacy(ctx, request.(GetCategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetCategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(GetCategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitGetCategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PatchCategoryLegacy operation middleware
-func (sh *strictHandler) PatchCategoryLegacy(ctx *gin.Context, categoryId CategoryId) {
-	var request PatchCategoryLegacyRequestObject
-
-	request.CategoryId = categoryId
-
-	var body PatchCategoryLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PatchCategoryLegacy(ctx, request.(PatchCategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PatchCategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PatchCategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitPatchCategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// RestoreCategoryLegacy operation middleware
-func (sh *strictHandler) RestoreCategoryLegacy(ctx *gin.Context, categoryId CategoryId) {
-	var request RestoreCategoryLegacyRequestObject
-
-	request.CategoryId = categoryId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.RestoreCategoryLegacy(ctx, request.(RestoreCategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RestoreCategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(RestoreCategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitRestoreCategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListCategorySubcategoriesLegacy operation middleware
-func (sh *strictHandler) ListCategorySubcategoriesLegacy(ctx *gin.Context, categoryId CategoryId, params ListCategorySubcategoriesLegacyParams) {
-	var request ListCategorySubcategoriesLegacyRequestObject
-
-	request.CategoryId = categoryId
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListCategorySubcategoriesLegacy(ctx, request.(ListCategorySubcategoriesLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListCategorySubcategoriesLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ListCategorySubcategoriesLegacyResponseObject); ok {
-		if err := validResponse.VisitListCategorySubcategoriesLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateSubcategoryLegacy operation middleware
-func (sh *strictHandler) CreateSubcategoryLegacy(ctx *gin.Context, categoryId CategoryId) {
-	var request CreateSubcategoryLegacyRequestObject
-
-	request.CategoryId = categoryId
-
-	var body CreateSubcategoryLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateSubcategoryLegacy(ctx, request.(CreateSubcategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateSubcategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CreateSubcategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitCreateSubcategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListSubcategoriesLegacy operation middleware
-func (sh *strictHandler) ListSubcategoriesLegacy(ctx *gin.Context, params ListSubcategoriesLegacyParams) {
-	var request ListSubcategoriesLegacyRequestObject
-
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListSubcategoriesLegacy(ctx, request.(ListSubcategoriesLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListSubcategoriesLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ListSubcategoriesLegacyResponseObject); ok {
-		if err := validResponse.VisitListSubcategoriesLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteSubcategoryLegacy operation middleware
-func (sh *strictHandler) DeleteSubcategoryLegacy(ctx *gin.Context, subcategoryId SubcategoryId) {
-	var request DeleteSubcategoryLegacyRequestObject
-
-	request.SubcategoryId = subcategoryId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteSubcategoryLegacy(ctx, request.(DeleteSubcategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteSubcategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(DeleteSubcategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitDeleteSubcategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetSubcategoryLegacy operation middleware
-func (sh *strictHandler) GetSubcategoryLegacy(ctx *gin.Context, subcategoryId SubcategoryId) {
-	var request GetSubcategoryLegacyRequestObject
-
-	request.SubcategoryId = subcategoryId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetSubcategoryLegacy(ctx, request.(GetSubcategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetSubcategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(GetSubcategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitGetSubcategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PatchSubcategoryLegacy operation middleware
-func (sh *strictHandler) PatchSubcategoryLegacy(ctx *gin.Context, subcategoryId SubcategoryId) {
-	var request PatchSubcategoryLegacyRequestObject
-
-	request.SubcategoryId = subcategoryId
-
-	var body PatchSubcategoryLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PatchSubcategoryLegacy(ctx, request.(PatchSubcategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PatchSubcategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PatchSubcategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitPatchSubcategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// RestoreSubcategoryLegacy operation middleware
-func (sh *strictHandler) RestoreSubcategoryLegacy(ctx *gin.Context, subcategoryId SubcategoryId) {
-	var request RestoreSubcategoryLegacyRequestObject
-
-	request.SubcategoryId = subcategoryId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.RestoreSubcategoryLegacy(ctx, request.(RestoreSubcategoryLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RestoreSubcategoryLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(RestoreSubcategoryLegacyResponseObject); ok {
-		if err := validResponse.VisitRestoreSubcategoryLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListTransactionsLegacy operation middleware
-func (sh *strictHandler) ListTransactionsLegacy(ctx *gin.Context, params ListTransactionsLegacyParams) {
-	var request ListTransactionsLegacyRequestObject
-
-	request.Params = params
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListTransactionsLegacy(ctx, request.(ListTransactionsLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListTransactionsLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(ListTransactionsLegacyResponseObject); ok {
-		if err := validResponse.VisitListTransactionsLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateTransactionLegacy operation middleware
-func (sh *strictHandler) CreateTransactionLegacy(ctx *gin.Context) {
-	var request CreateTransactionLegacyRequestObject
-
-	var body CreateTransactionLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateTransactionLegacy(ctx, request.(CreateTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CreateTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitCreateTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PatchTransactionsBulkLegacy operation middleware
-func (sh *strictHandler) PatchTransactionsBulkLegacy(ctx *gin.Context) {
-	var request PatchTransactionsBulkLegacyRequestObject
-
-	var body PatchTransactionsBulkLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PatchTransactionsBulkLegacy(ctx, request.(PatchTransactionsBulkLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PatchTransactionsBulkLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PatchTransactionsBulkLegacyResponseObject); ok {
-		if err := validResponse.VisitPatchTransactionsBulkLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateTransactionsBulkLegacy operation middleware
-func (sh *strictHandler) CreateTransactionsBulkLegacy(ctx *gin.Context) {
-	var request CreateTransactionsBulkLegacyRequestObject
-
-	var body CreateTransactionsBulkLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateTransactionsBulkLegacy(ctx, request.(CreateTransactionsBulkLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateTransactionsBulkLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CreateTransactionsBulkLegacyResponseObject); ok {
-		if err := validResponse.VisitCreateTransactionsBulkLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteTransactionLegacy operation middleware
-func (sh *strictHandler) DeleteTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request DeleteTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteTransactionLegacy(ctx, request.(DeleteTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(DeleteTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitDeleteTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetTransactionLegacy operation middleware
-func (sh *strictHandler) GetTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request GetTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetTransactionLegacy(ctx, request.(GetTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(GetTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitGetTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PatchTransactionLegacy operation middleware
-func (sh *strictHandler) PatchTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request PatchTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	var body PatchTransactionLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PatchTransactionLegacy(ctx, request.(PatchTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PatchTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PatchTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitPatchTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CancelTransactionLegacy operation middleware
-func (sh *strictHandler) CancelTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request CancelTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	var body CancelTransactionLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.CancelTransactionLegacy(ctx, request.(CancelTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CancelTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(CancelTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitCancelTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DuplicateTransactionLegacy operation middleware
-func (sh *strictHandler) DuplicateTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request DuplicateTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	var body DuplicateTransactionLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.DuplicateTransactionLegacy(ctx, request.(DuplicateTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DuplicateTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(DuplicateTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitDuplicateTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PostTransactionLegacy operation middleware
-func (sh *strictHandler) PostTransactionLegacy(ctx *gin.Context, transactionId TransactionId) {
-	var request PostTransactionLegacyRequestObject
-
-	request.TransactionId = transactionId
-
-	var body PostTransactionLegacyJSONRequestBody
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		ctx.Error(err)
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.PostTransactionLegacy(ctx, request.(PostTransactionLegacyRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PostTransactionLegacy")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(PostTransactionLegacyResponseObject); ok {
-		if err := validResponse.VisitPostTransactionLegacyResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"8lACwwAA",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

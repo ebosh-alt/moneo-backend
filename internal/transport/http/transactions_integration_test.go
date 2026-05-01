@@ -247,7 +247,7 @@ func newIntegratedCatalogTransactionsFixture(t *testing.T) integratedCatalogTran
 		TransactionsBulkCreate:      transactionBulkCreate,
 		TransactionsBulkPatch:       transactionBulkPatch,
 	})
-	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
+	apiHandler := transporthttp.NewAPIHandler(nil, catalogHandler)
 
 	authFixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		StrictAPIHandler: apiHandler,

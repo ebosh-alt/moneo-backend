@@ -47,6 +47,11 @@ components:
       name: transactionId
       required: true
       schema: { type: string }
+    SessionId:
+      in: path
+      name: sessionId
+      required: true
+      schema: { type: string }
 
   responses:
     ValidationError:
@@ -79,6 +84,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AuthError:
+      description: Auth flow error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthErrorResponse' }
 
   schemas:
     ErrorDetail:
@@ -103,6 +113,84 @@ components:
       required: [error]
       properties:
         error: { $ref: '#/components/schemas/ErrorBody' }
+
+    AuthErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    AuthResponse:
+      type: object
+      required: [access_token, expires_in]
+      properties:
+        access_token: { type: string }
+        expires_in: { type: integer }
+
+    AuthOKResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+
+    AuthRegisterRequest:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+        password_confirm: { type: string }
+
+    AuthLoginRequest:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+
+    AuthForgotPasswordRequest:
+      type: object
+      properties:
+        email: { type: string }
+
+    AuthResetPasswordRequest:
+      type: object
+      properties:
+        token: { type: string }
+        password: { type: string }
+        password_confirm: { type: string }
+
+    AuthVerifyEmailRequest:
+      type: object
+      properties:
+        token: { type: string }
+
+    AuthMeResponse:
+      type: object
+      required: [id, email, email_verified, created_at]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        email_verified: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    AuthSession:
+      type: object
+      required: [id, created_at, expires_at]
+      properties:
+        id: { type: string }
+        user_agent: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        device_name: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time }
+
+    AuthSessionsResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/AuthSession' }
 
     Pagination:
       type: object
@@ -378,4 +466,3 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Transaction' }
         pagination: { $ref: '#/components/schemas/Pagination' }
-

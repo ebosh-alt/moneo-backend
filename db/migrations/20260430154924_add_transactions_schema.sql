@@ -61,7 +61,10 @@ CREATE INDEX idx_transactions_user_effective_date
     ON transactions (user_id, COALESCE(occurred_at, planned_at) DESC);
 
 CREATE INDEX idx_transactions_user_effective_month
-    ON transactions (user_id, date_trunc('month', COALESCE(occurred_at, planned_at)));
+    ON transactions (
+        user_id,
+        date_trunc('month', COALESCE(occurred_at, planned_at) AT TIME ZONE 'UTC')
+    );
 
 CREATE INDEX idx_transactions_user_account_from
     ON transactions (user_id, account_from_id, COALESCE(occurred_at, planned_at) DESC);

@@ -18,16 +18,43 @@ import (
 // APIHandler adapts generated strict server calls to existing transport handlers.
 // It keeps business logic in app/domain and reuses existing HTTP mapping behavior.
 type APIHandler struct {
+	auth    *AuthHandler
 	catalog *CatalogHandler
 }
 
-func NewAPIHandler(catalog *CatalogHandler) *APIHandler {
-	return &APIHandler{catalog: catalog}
+func NewAPIHandler(auth *AuthHandler, catalog *CatalogHandler) *APIHandler {
+	return &APIHandler{
+		auth:    auth,
+		catalog: catalog,
+	}
 }
 
-func (h *APIHandler) invokeCatalog(ctx context.Context, request any, handlerName string, decode func(status int, payload []byte) (any, error)) (any, error) {
-	if h == nil || h.catalog == nil {
-		return nil, fmt.Errorf("catalog handler is not configured")
+func WithAuthStrictHandler(
+	auth *AuthHandler,
+	strict generated.StrictServerInterface,
+) generated.StrictServerInterface {
+	if strict == nil {
+		return NewAPIHandler(auth, nil)
+	}
+
+	apiHandler, ok := strict.(*APIHandler)
+	if !ok {
+		return strict
+	}
+
+	return NewAPIHandler(auth, apiHandler.catalog)
+}
+
+func (h *APIHandler) invokeHandler(
+	ctx context.Context,
+	request any,
+	target any,
+	targetName string,
+	handlerName string,
+	decode func(status int, payload []byte) (any, error),
+) (any, error) {
+	if h == nil || target == nil {
+		return nil, fmt.Errorf("%s handler is not configured", targetName)
 	}
 
 	ginCtx, ok := ctx.(*gin.Context)
@@ -55,14 +82,35 @@ func (h *APIHandler) invokeCatalog(ctx context.Context, request any, handlerName
 		proxy.Request.Header.Set("Content-Type", "application/json")
 	}
 
-	method := reflect.ValueOf(h.catalog).MethodByName(handlerName)
+	method := reflect.ValueOf(target).MethodByName(handlerName)
 	if !method.IsValid() {
-		return nil, fmt.Errorf("catalog handler method %s not found", handlerName)
+		return nil, fmt.Errorf("%s handler method %s not found", targetName, handlerName)
 	}
 	method.Call([]reflect.Value{reflect.ValueOf(proxy)})
 	proxy.Writer.WriteHeaderNow()
+	for _, setCookie := range recorder.Header().Values("Set-Cookie") {
+		ginCtx.Writer.Header().Add("Set-Cookie", setCookie)
+	}
 
 	return decode(recorder.Code, recorder.Body.Bytes())
+}
+
+func (h *APIHandler) invokeAuth(
+	ctx context.Context,
+	request any,
+	handlerName string,
+	decode func(status int, payload []byte) (any, error),
+) (any, error) {
+	return h.invokeHandler(ctx, request, h.auth, "auth", handlerName, decode)
+}
+
+func (h *APIHandler) invokeCatalog(
+	ctx context.Context,
+	request any,
+	handlerName string,
+	decode func(status int, payload []byte) (any, error),
+) (any, error) {
+	return h.invokeHandler(ctx, request, h.catalog, "catalog", handlerName, decode)
 }
 
 func extractRequestBody(request any) ([]byte, bool) {
@@ -157,403 +205,12 @@ func toSparseJSONValue(value reflect.Value) (any, bool) {
 	}
 }
 
-func (h *APIHandler) ListAccountsLegacy(ctx context.Context, request generated.ListAccountsLegacyRequestObject) (generated.ListAccountsLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListAccountsLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListAccountsLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListAccountsLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListAccountsLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "ListAccounts", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListAccountsLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListAccountsLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) CreateAccountLegacy(ctx context.Context, request generated.CreateAccountLegacyRequestObject) (generated.CreateAccountLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateAccountLegacy201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateAccountLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateAccountLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateAccountLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateAccountLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateAccountLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "CreateAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateAccountLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateAccountLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) GetAccountsSummaryLegacy(ctx context.Context, request generated.GetAccountsSummaryLegacyRequestObject) (generated.GetAccountsSummaryLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetAccountsSummaryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetAccountsSummaryLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetAccountsSummaryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetAccountsSummaryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "GetAccountsSummary", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetAccountsSummaryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetAccountsSummaryLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) GetAccountLegacy(ctx context.Context, request generated.GetAccountLegacyRequestObject) (generated.GetAccountLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetAccountLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetAccountLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetAccountLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetAccountLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetAccountLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "GetAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetAccountLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetAccountLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) PatchAccountLegacy(ctx context.Context, request generated.PatchAccountLegacyRequestObject) (generated.PatchAccountLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchAccountLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchAccountLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchAccountLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchAccountLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchAccountLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchAccountLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "PatchAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchAccountLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchAccountLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) ArchiveAccountLegacy(ctx context.Context, request generated.ArchiveAccountLegacyRequestObject) (generated.ArchiveAccountLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ArchiveAccountLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ArchiveAccountLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.ArchiveAccountLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ArchiveAccountLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "ArchiveAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ArchiveAccountLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ArchiveAccountLegacy", result)
-	}
-	return typed, nil
-}
 
-func (h *APIHandler) RestoreAccountLegacy(ctx context.Context, request generated.RestoreAccountLegacyRequestObject) (generated.RestoreAccountLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RestoreAccountLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreAccountLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreAccountLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.RestoreAccountLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreAccountLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.RestoreAccountLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreAccountLegacy", result)
-	}
-	return typed, nil
-}
 
 func (h *APIHandler) ListAccounts(ctx context.Context, request generated.ListAccountsRequestObject) (generated.ListAccountsResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
@@ -2377,61 +2034,11 @@ func (h *APIHandler) PostTransaction(ctx context.Context, request generated.Post
 	return typed, nil
 }
 
-func (h *APIHandler) ListCategoriesLegacy(ctx context.Context, request generated.ListCategoriesLegacyRequestObject) (generated.ListCategoriesLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListCategoriesLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListCategoriesLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListCategoriesLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListCategoriesLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "ListCategories", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListCategoriesLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListCategoriesLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) CreateCategoryLegacy(ctx context.Context, request generated.CreateCategoryLegacyRequestObject) (generated.CreateCategoryLegacyResponseObject, error) {
+func (h *APIHandler) RegisterAuth(ctx context.Context, request generated.RegisterAuthRequestObject) (generated.RegisterAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 201:
-			var response generated.CreateCategoryLegacy201JSONResponse
+			var response generated.RegisterAuth201JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2439,15 +2046,7 @@ func (h *APIHandler) CreateCategoryLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 400:
-			var response generated.CreateCategoryLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateCategoryLegacy401JSONResponse
+			var response generated.RegisterAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2455,7 +2054,7 @@ func (h *APIHandler) CreateCategoryLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 409:
-			var response generated.CreateCategoryLegacy409JSONResponse
+			var response generated.RegisterAuth409JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2463,7 +2062,7 @@ func (h *APIHandler) CreateCategoryLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 500:
-			var response generated.CreateCategoryLegacy500JSONResponse
+			var response generated.RegisterAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2474,72 +2073,22 @@ func (h *APIHandler) CreateCategoryLegacy(ctx context.Context, request generated
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateCategory", decode)
+	result, err := h.invokeAuth(ctx, request, "Register", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.CreateCategoryLegacyResponseObject)
+	typed, ok := result.(generated.RegisterAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateCategoryLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for RegisterAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) DeleteCategoryLegacy(ctx context.Context, request generated.DeleteCategoryLegacyRequestObject) (generated.DeleteCategoryLegacyResponseObject, error) {
+func (h *APIHandler) LoginAuth(ctx context.Context, request generated.LoginAuthRequestObject) (generated.LoginAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.DeleteCategoryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DeleteCategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DeleteCategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DeleteCategoryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.DeleteCategoryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteCategoryLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) GetCategoryLegacy(ctx context.Context, request generated.GetCategoryLegacyRequestObject) (generated.GetCategoryLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetCategoryLegacy200JSONResponse
+			var response generated.LoginAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2547,7 +2096,7 @@ func (h *APIHandler) GetCategoryLegacy(ctx context.Context, request generated.Ge
 			}
 			return response, nil
 		case 400:
-			var response generated.GetCategoryLegacy400JSONResponse
+			var response generated.LoginAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2555,15 +2104,7 @@ func (h *APIHandler) GetCategoryLegacy(ctx context.Context, request generated.Ge
 			}
 			return response, nil
 		case 401:
-			var response generated.GetCategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetCategoryLegacy404JSONResponse
+			var response generated.LoginAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2571,7 +2112,7 @@ func (h *APIHandler) GetCategoryLegacy(ctx context.Context, request generated.Ge
 			}
 			return response, nil
 		case 500:
-			var response generated.GetCategoryLegacy500JSONResponse
+			var response generated.LoginAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2582,22 +2123,22 @@ func (h *APIHandler) GetCategoryLegacy(ctx context.Context, request generated.Ge
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetCategory", decode)
+	result, err := h.invokeAuth(ctx, request, "Login", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.GetCategoryLegacyResponseObject)
+	typed, ok := result.(generated.LoginAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetCategoryLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for LoginAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) PatchCategoryLegacy(ctx context.Context, request generated.PatchCategoryLegacyRequestObject) (generated.PatchCategoryLegacyResponseObject, error) {
+func (h *APIHandler) RefreshAuth(ctx context.Context, request generated.RefreshAuthRequestObject) (generated.RefreshAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.PatchCategoryLegacy200JSONResponse
+			var response generated.RefreshAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2605,7 +2146,7 @@ func (h *APIHandler) PatchCategoryLegacy(ctx context.Context, request generated.
 			}
 			return response, nil
 		case 400:
-			var response generated.PatchCategoryLegacy400JSONResponse
+			var response generated.RefreshAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2613,23 +2154,7 @@ func (h *APIHandler) PatchCategoryLegacy(ctx context.Context, request generated.
 			}
 			return response, nil
 		case 401:
-			var response generated.PatchCategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchCategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchCategoryLegacy409JSONResponse
+			var response generated.RefreshAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2637,7 +2162,7 @@ func (h *APIHandler) PatchCategoryLegacy(ctx context.Context, request generated.
 			}
 			return response, nil
 		case 500:
-			var response generated.PatchCategoryLegacy500JSONResponse
+			var response generated.RefreshAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2648,80 +2173,22 @@ func (h *APIHandler) PatchCategoryLegacy(ctx context.Context, request generated.
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchCategory", decode)
+	result, err := h.invokeAuth(ctx, request, "Refresh", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.PatchCategoryLegacyResponseObject)
+	typed, ok := result.(generated.RefreshAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchCategoryLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for RefreshAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) RestoreCategoryLegacy(ctx context.Context, request generated.RestoreCategoryLegacyRequestObject) (generated.RestoreCategoryLegacyResponseObject, error) {
+func (h *APIHandler) LogoutAuth(ctx context.Context, request generated.LogoutAuthRequestObject) (generated.LogoutAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.RestoreCategoryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreCategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreCategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.RestoreCategoryLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreCategoryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.RestoreCategoryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreCategoryLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) ListCategorySubcategoriesLegacy(ctx context.Context, request generated.ListCategorySubcategoriesLegacyRequestObject) (generated.ListCategorySubcategoriesLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListCategorySubcategoriesLegacy200JSONResponse
+			var response generated.LogoutAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2729,23 +2196,7 @@ func (h *APIHandler) ListCategorySubcategoriesLegacy(ctx context.Context, reques
 			}
 			return response, nil
 		case 400:
-			var response generated.ListCategorySubcategoriesLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListCategorySubcategoriesLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.ListCategorySubcategoriesLegacy404JSONResponse
+			var response generated.LogoutAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2753,7 +2204,7 @@ func (h *APIHandler) ListCategorySubcategoriesLegacy(ctx context.Context, reques
 			}
 			return response, nil
 		case 500:
-			var response generated.ListCategorySubcategoriesLegacy500JSONResponse
+			var response generated.LogoutAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2764,104 +2215,22 @@ func (h *APIHandler) ListCategorySubcategoriesLegacy(ctx context.Context, reques
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListCategorySubcategories", decode)
+	result, err := h.invokeAuth(ctx, request, "Logout", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.ListCategorySubcategoriesLegacyResponseObject)
+	typed, ok := result.(generated.LogoutAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListCategorySubcategoriesLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for LogoutAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) CreateSubcategoryLegacy(ctx context.Context, request generated.CreateSubcategoryLegacyRequestObject) (generated.CreateSubcategoryLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateSubcategoryLegacy201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateSubcategoryLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateSubcategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateSubcategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateSubcategoryLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateSubcategoryLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateSubcategoryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "CreateSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateSubcategoryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateSubcategoryLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) ListSubcategoriesLegacy(ctx context.Context, request generated.ListSubcategoriesLegacyRequestObject) (generated.ListSubcategoriesLegacyResponseObject, error) {
+func (h *APIHandler) LogoutAllAuth(ctx context.Context, request generated.LogoutAllAuthRequestObject) (generated.LogoutAllAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.ListSubcategoriesLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListSubcategoriesLegacy400JSONResponse
+			var response generated.LogoutAllAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2869,7 +2238,7 @@ func (h *APIHandler) ListSubcategoriesLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 401:
-			var response generated.ListSubcategoriesLegacy401JSONResponse
+			var response generated.LogoutAllAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2877,7 +2246,7 @@ func (h *APIHandler) ListSubcategoriesLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 500:
-			var response generated.ListSubcategoriesLegacy500JSONResponse
+			var response generated.LogoutAllAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2888,22 +2257,22 @@ func (h *APIHandler) ListSubcategoriesLegacy(ctx context.Context, request genera
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListSubcategories", decode)
+	result, err := h.invokeAuth(ctx, request, "LogoutAll", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.ListSubcategoriesLegacyResponseObject)
+	typed, ok := result.(generated.LogoutAllAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListSubcategoriesLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for LogoutAllAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) DeleteSubcategoryLegacy(ctx context.Context, request generated.DeleteSubcategoryLegacyRequestObject) (generated.DeleteSubcategoryLegacyResponseObject, error) {
+func (h *APIHandler) MeAuth(ctx context.Context, request generated.MeAuthRequestObject) (generated.MeAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.DeleteSubcategoryLegacy200JSONResponse
+			var response generated.MeAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2911,15 +2280,7 @@ func (h *APIHandler) DeleteSubcategoryLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 401:
-			var response generated.DeleteSubcategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DeleteSubcategoryLegacy404JSONResponse
+			var response generated.MeAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2927,7 +2288,7 @@ func (h *APIHandler) DeleteSubcategoryLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 500:
-			var response generated.DeleteSubcategoryLegacy500JSONResponse
+			var response generated.MeAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2938,30 +2299,22 @@ func (h *APIHandler) DeleteSubcategoryLegacy(ctx context.Context, request genera
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteSubcategory", decode)
+	result, err := h.invokeAuth(ctx, request, "Me", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.DeleteSubcategoryLegacyResponseObject)
+	typed, ok := result.(generated.MeAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteSubcategoryLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for MeAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) GetSubcategoryLegacy(ctx context.Context, request generated.GetSubcategoryLegacyRequestObject) (generated.GetSubcategoryLegacyResponseObject, error) {
+func (h *APIHandler) SessionsAuth(ctx context.Context, request generated.SessionsAuthRequestObject) (generated.SessionsAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.GetSubcategoryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetSubcategoryLegacy400JSONResponse
+			var response generated.SessionsAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2969,15 +2322,7 @@ func (h *APIHandler) GetSubcategoryLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 401:
-			var response generated.GetSubcategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetSubcategoryLegacy404JSONResponse
+			var response generated.SessionsAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2985,7 +2330,7 @@ func (h *APIHandler) GetSubcategoryLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 500:
-			var response generated.GetSubcategoryLegacy500JSONResponse
+			var response generated.SessionsAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -2996,420 +2341,24 @@ func (h *APIHandler) GetSubcategoryLegacy(ctx context.Context, request generated
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetSubcategory", decode)
+	result, err := h.invokeAuth(ctx, request, "Sessions", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.GetSubcategoryLegacyResponseObject)
+	typed, ok := result.(generated.SessionsAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetSubcategoryLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for SessionsAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) PatchSubcategoryLegacy(ctx context.Context, request generated.PatchSubcategoryLegacyRequestObject) (generated.PatchSubcategoryLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchSubcategoryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchSubcategoryLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchSubcategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchSubcategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchSubcategoryLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchSubcategoryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "PatchSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchSubcategoryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchSubcategoryLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) RestoreSubcategoryLegacy(ctx context.Context, request generated.RestoreSubcategoryLegacyRequestObject) (generated.RestoreSubcategoryLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RestoreSubcategoryLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreSubcategoryLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreSubcategoryLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.RestoreSubcategoryLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreSubcategoryLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.RestoreSubcategoryLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreSubcategoryLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) ListTransactionsLegacy(ctx context.Context, request generated.ListTransactionsLegacyRequestObject) (generated.ListTransactionsLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListTransactionsLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListTransactionsLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListTransactionsLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListTransactionsLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "ListTransactions", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListTransactionsLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListTransactionsLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) CreateTransactionLegacy(ctx context.Context, request generated.CreateTransactionLegacyRequestObject) (generated.CreateTransactionLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateTransactionLegacy201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateTransactionLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateTransactionLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateTransactionLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateTransactionLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "CreateTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateTransactionLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateTransactionLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) PatchTransactionsBulkLegacy(ctx context.Context, request generated.PatchTransactionsBulkLegacyRequestObject) (generated.PatchTransactionsBulkLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchTransactionsBulkLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchTransactionsBulkLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchTransactionsBulkLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchTransactionsBulkLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchTransactionsBulkLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.PatchTransactionsBulkLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchTransactionsBulkLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "PatchTransactionsBulk", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchTransactionsBulkLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchTransactionsBulkLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) CreateTransactionsBulkLegacy(ctx context.Context, request generated.CreateTransactionsBulkLegacyRequestObject) (generated.CreateTransactionsBulkLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateTransactionsBulkLegacy201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateTransactionsBulkLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateTransactionsBulkLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateTransactionsBulkLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateTransactionsBulkLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateTransactionsBulkLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateTransactionsBulkLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "CreateTransactionsBulk", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateTransactionsBulkLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateTransactionsBulkLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) DeleteTransactionLegacy(ctx context.Context, request generated.DeleteTransactionLegacyRequestObject) (generated.DeleteTransactionLegacyResponseObject, error) {
+func (h *APIHandler) RevokeSessionAuth(ctx context.Context, request generated.RevokeSessionAuthRequestObject) (generated.RevokeSessionAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 204:
-			return generated.DeleteTransactionLegacy204Response{}, nil
+			return generated.RevokeSessionAuth204Response{}, nil
 		case 400:
-			var response generated.DeleteTransactionLegacy400JSONResponse
+			var response generated.RevokeSessionAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3417,7 +2366,7 @@ func (h *APIHandler) DeleteTransactionLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 401:
-			var response generated.DeleteTransactionLegacy401JSONResponse
+			var response generated.RevokeSessionAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3425,15 +2374,7 @@ func (h *APIHandler) DeleteTransactionLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 404:
-			var response generated.DeleteTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.DeleteTransactionLegacy409JSONResponse
+			var response generated.RevokeSessionAuth404JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3441,7 +2382,7 @@ func (h *APIHandler) DeleteTransactionLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 500:
-			var response generated.DeleteTransactionLegacy500JSONResponse
+			var response generated.RevokeSessionAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3452,22 +2393,22 @@ func (h *APIHandler) DeleteTransactionLegacy(ctx context.Context, request genera
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteTransaction", decode)
+	result, err := h.invokeAuth(ctx, request, "RevokeSession", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.DeleteTransactionLegacyResponseObject)
+	typed, ok := result.(generated.RevokeSessionAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteTransactionLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for RevokeSessionAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) GetTransactionLegacy(ctx context.Context, request generated.GetTransactionLegacyRequestObject) (generated.GetTransactionLegacyResponseObject, error) {
+func (h *APIHandler) ForgotPasswordAuth(ctx context.Context, request generated.ForgotPasswordAuthRequestObject) (generated.ForgotPasswordAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.GetTransactionLegacy200JSONResponse
+			var response generated.ForgotPasswordAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3475,23 +2416,7 @@ func (h *APIHandler) GetTransactionLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 400:
-			var response generated.GetTransactionLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetTransactionLegacy404JSONResponse
+			var response generated.ForgotPasswordAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3499,7 +2424,7 @@ func (h *APIHandler) GetTransactionLegacy(ctx context.Context, request generated
 			}
 			return response, nil
 		case 500:
-			var response generated.GetTransactionLegacy500JSONResponse
+			var response generated.ForgotPasswordAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3510,22 +2435,22 @@ func (h *APIHandler) GetTransactionLegacy(ctx context.Context, request generated
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetTransaction", decode)
+	result, err := h.invokeAuth(ctx, request, "ForgotPassword", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.GetTransactionLegacyResponseObject)
+	typed, ok := result.(generated.ForgotPasswordAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetTransactionLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for ForgotPasswordAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) PatchTransactionLegacy(ctx context.Context, request generated.PatchTransactionLegacyRequestObject) (generated.PatchTransactionLegacyResponseObject, error) {
+func (h *APIHandler) ResetPasswordAuth(ctx context.Context, request generated.ResetPasswordAuthRequestObject) (generated.ResetPasswordAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.PatchTransactionLegacy200JSONResponse
+			var response generated.ResetPasswordAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3533,7 +2458,7 @@ func (h *APIHandler) PatchTransactionLegacy(ctx context.Context, request generat
 			}
 			return response, nil
 		case 400:
-			var response generated.PatchTransactionLegacy400JSONResponse
+			var response generated.ResetPasswordAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3541,31 +2466,7 @@ func (h *APIHandler) PatchTransactionLegacy(ctx context.Context, request generat
 			}
 			return response, nil
 		case 401:
-			var response generated.PatchTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchTransactionLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.PatchTransactionLegacy422JSONResponse
+			var response generated.ResetPasswordAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3573,7 +2474,7 @@ func (h *APIHandler) PatchTransactionLegacy(ctx context.Context, request generat
 			}
 			return response, nil
 		case 500:
-			var response generated.PatchTransactionLegacy500JSONResponse
+			var response generated.ResetPasswordAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3584,30 +2485,22 @@ func (h *APIHandler) PatchTransactionLegacy(ctx context.Context, request generat
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchTransaction", decode)
+	result, err := h.invokeAuth(ctx, request, "ResetPassword", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.PatchTransactionLegacyResponseObject)
+	typed, ok := result.(generated.ResetPasswordAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchTransactionLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for ResetPasswordAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) CancelTransactionLegacy(ctx context.Context, request generated.CancelTransactionLegacyRequestObject) (generated.CancelTransactionLegacyResponseObject, error) {
+func (h *APIHandler) SendVerificationEmailAuth(ctx context.Context, request generated.SendVerificationEmailAuthRequestObject) (generated.SendVerificationEmailAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.CancelTransactionLegacy200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CancelTransactionLegacy400JSONResponse
+			var response generated.SendVerificationEmailAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3615,23 +2508,7 @@ func (h *APIHandler) CancelTransactionLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 401:
-			var response generated.CancelTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CancelTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CancelTransactionLegacy409JSONResponse
+			var response generated.SendVerificationEmailAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3639,7 +2516,7 @@ func (h *APIHandler) CancelTransactionLegacy(ctx context.Context, request genera
 			}
 			return response, nil
 		case 500:
-			var response generated.CancelTransactionLegacy500JSONResponse
+			var response generated.SendVerificationEmailAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3650,96 +2527,22 @@ func (h *APIHandler) CancelTransactionLegacy(ctx context.Context, request genera
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CancelTransaction", decode)
+	result, err := h.invokeAuth(ctx, request, "SendVerificationEmail", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.CancelTransactionLegacyResponseObject)
+	typed, ok := result.(generated.SendVerificationEmailAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CancelTransactionLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for SendVerificationEmailAuth", result)
 	}
 	return typed, nil
 }
 
-func (h *APIHandler) DuplicateTransactionLegacy(ctx context.Context, request generated.DuplicateTransactionLegacyRequestObject) (generated.DuplicateTransactionLegacyResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.DuplicateTransactionLegacy201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.DuplicateTransactionLegacy400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DuplicateTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DuplicateTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.DuplicateTransactionLegacy409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.DuplicateTransactionLegacy422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DuplicateTransactionLegacy500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeCatalog(ctx, request, "DuplicateTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.DuplicateTransactionLegacyResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DuplicateTransactionLegacy", result)
-	}
-	return typed, nil
-}
-
-func (h *APIHandler) PostTransactionLegacy(ctx context.Context, request generated.PostTransactionLegacyRequestObject) (generated.PostTransactionLegacyResponseObject, error) {
+func (h *APIHandler) VerifyEmailAuth(ctx context.Context, request generated.VerifyEmailAuthRequestObject) (generated.VerifyEmailAuthResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
 		switch status {
 		case 200:
-			var response generated.PostTransactionLegacy200JSONResponse
+			var response generated.VerifyEmailAuth200JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3747,7 +2550,7 @@ func (h *APIHandler) PostTransactionLegacy(ctx context.Context, request generate
 			}
 			return response, nil
 		case 400:
-			var response generated.PostTransactionLegacy400JSONResponse
+			var response generated.VerifyEmailAuth400JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3755,23 +2558,7 @@ func (h *APIHandler) PostTransactionLegacy(ctx context.Context, request generate
 			}
 			return response, nil
 		case 401:
-			var response generated.PostTransactionLegacy401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PostTransactionLegacy404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PostTransactionLegacy409JSONResponse
+			var response generated.VerifyEmailAuth401JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3779,7 +2566,7 @@ func (h *APIHandler) PostTransactionLegacy(ctx context.Context, request generate
 			}
 			return response, nil
 		case 500:
-			var response generated.PostTransactionLegacy500JSONResponse
+			var response generated.VerifyEmailAuth500JSONResponse
 			if len(payload) > 0 {
 				if err := json.Unmarshal(payload, &response); err != nil {
 					return nil, err
@@ -3790,13 +2577,34 @@ func (h *APIHandler) PostTransactionLegacy(ctx context.Context, request generate
 			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PostTransaction", decode)
+	result, err := h.invokeAuth(ctx, request, "VerifyEmail", decode)
 	if err != nil {
 		return nil, err
 	}
-	typed, ok := result.(generated.PostTransactionLegacyResponseObject)
+	typed, ok := result.(generated.VerifyEmailAuthResponseObject)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PostTransactionLegacy", result)
+		return nil, fmt.Errorf("unexpected response type %T for VerifyEmailAuth", result)
 	}
 	return typed, nil
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

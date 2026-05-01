@@ -234,7 +234,7 @@ func TestTransactionsStrictWriteBulkEndpoints(t *testing.T) {
 func TestAPIHandlerDeleteTransactionNoContentDecode(t *testing.T) {
 	service := newTransactionUseCases()
 	catalogHandler := newTransactionsCatalogHandlerForTest(service)
-	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
+	apiHandler := transporthttp.NewAPIHandler(nil, catalogHandler)
 
 	userID := shared.UserID("user-delete")
 	service.mustSeed(t, transactionSeed{
