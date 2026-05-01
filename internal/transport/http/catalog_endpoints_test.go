@@ -1302,7 +1302,38 @@ type catalogRouterFixture struct {
 func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) catalogRouterFixture {
 	t.Helper()
 
-	catalogHandler := transporthttp.NewCatalogHandler(transporthttp.CatalogHandlerDeps{
+	catalogHandler := newCatalogHandlerForTest(store)
+
+	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
+		CatalogHandler: catalogHandler,
+	})
+
+	return catalogRouterFixture{
+		router:  fixture.router,
+		auth:    fixture,
+		service: store,
+	}
+}
+
+func newCatalogStrictRouterWithAuthFixture(t *testing.T, store *catalogTestStore) catalogRouterFixture {
+	t.Helper()
+
+	catalogHandler := newCatalogHandlerForTest(store)
+	apiHandler := transporthttp.NewAPIHandler(catalogHandler)
+
+	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
+		StrictAPIHandler: apiHandler,
+	})
+
+	return catalogRouterFixture{
+		router:  fixture.router,
+		auth:    fixture,
+		service: store,
+	}
+}
+
+func newCatalogHandlerForTest(store *catalogTestStore) *transporthttp.CatalogHandler {
+	return transporthttp.NewCatalogHandler(transporthttp.CatalogHandlerDeps{
 		AccountsCreate:              accountCreateUseCase{store: store},
 		AccountsGet:                 accountGetUseCase{store: store},
 		AccountsList:                accountListUseCase{store: store},
@@ -1324,16 +1355,6 @@ func newCatalogRouterWithAuthFixture(t *testing.T, store *catalogTestStore) cata
 		SubcategoriesGet:            subcategoryGetUseCase{store: store},
 		SubcategoriesList:           subcategoryListUseCase{store: store},
 	})
-
-	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
-		CatalogHandler: catalogHandler,
-	})
-
-	return catalogRouterFixture{
-		router:  fixture.router,
-		auth:    fixture,
-		service: store,
-	}
 }
 
 func registerAndGetAccessToken(t *testing.T, handler http.Handler, email string) string {
