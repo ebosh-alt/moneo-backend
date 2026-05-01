@@ -1,5 +1,8 @@
 POSTGRES_URL ?= postgres://video:video@localhost:5433/accounts?sslmode=disable
 APP_NAME ?= moneo-api
+VERIFY_BASELINE_OUT ?= /tmp/moneo-transactions-verify-baseline.json
+VERIFY_BASELINE_IN ?= /tmp/moneo-transactions-verify-baseline.json
+VERIFY_REPORT_FILE ?= /tmp/moneo-transactions-verify-report.md
 
 OPENAPI_SRC ?= api/openapi.yaml
 OPENAPI_BUNDLE ?= api/bundled/openapi.yaml
@@ -8,6 +11,7 @@ OPENAPI_GEN_FILE ?= internal/transport/http/generated/api.gen.go
 
 .PHONY: swag_init create-migration migrate-up migrate-down migrate-status migrate-version db-init
 .PHONY: ops-repair-transactions-dry-run ops-repair-transactions
+.PHONY: ops-verify-transactions-baseline ops-verify-transactions
 .PHONY: fmt vet test build check
 .PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-check
 
@@ -70,3 +74,9 @@ ops-repair-transactions-dry-run:
 
 ops-repair-transactions:
 	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/ops repair transactions-format
+
+ops-verify-transactions-baseline:
+	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/ops repair transactions-verify --baseline-out='$(VERIFY_BASELINE_OUT)'
+
+ops-verify-transactions:
+	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/ops repair transactions-verify --baseline-in='$(VERIFY_BASELINE_IN)' --report-file='$(VERIFY_REPORT_FILE)'

@@ -16,4 +16,7 @@
 
 - `make ops-repair-transactions-dry-run` — scan historical transactions and print repair report without DB changes.
 - `make ops-repair-transactions` — run idempotent historical transactions repair.
+- `make ops-verify-transactions-baseline` — save migration verification baseline snapshot (`before` state).
+- `make ops-verify-transactions` — run post-migration verification with baseline comparison and markdown report.
 - Direct CLI: `go run ./cmd/ops repair transactions-format --dry-run --batch-size=500 --limit=0`.
+- Direct CLI verify: `go run ./cmd/ops repair transactions-verify --baseline-out=/tmp/before.json` and `go run ./cmd/ops repair transactions-verify --baseline-in=/tmp/before.json --report-file=/tmp/report.md`.

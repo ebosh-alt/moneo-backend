@@ -12,6 +12,7 @@ import (
 
 const (
 	commandTransactionsFormat = "transactions-format"
+	commandTransactionsVerify = "transactions-verify"
 	defaultBatchSize          = 500
 	maxBatchSize              = 5000
 )
@@ -47,6 +48,13 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 		}
 		job := NewTransactionsFormatJob(r.pool, r.out)
 		return job.Run(ctx, opts)
+	case commandTransactionsVerify:
+		opts, err := parseTransactionsVerifyOptions(args[1:])
+		if err != nil {
+			return err
+		}
+		job := NewTransactionsVerificationJob(r.pool, r.out)
+		return job.Run(ctx, opts)
 	default:
 		return r.UsageError()
 	}
@@ -56,7 +64,8 @@ func (r *Runner) UsageError() error {
 	return errors.New(
 		"usage: go run ./cmd/ops repair <command> [flags]\n" +
 			"commands:\n" +
-			"  transactions-format  --dry-run --batch-size=500 --limit=0",
+			"  transactions-format  --dry-run --batch-size=500 --limit=0\n" +
+			"  transactions-verify  --batch-size=500 --limit=0 --sample-limit=50 --baseline-out=<file> --baseline-in=<file> --report-file=<file> --max-updated-at=<rfc3339>",
 	)
 }
 
@@ -83,6 +92,41 @@ func parseTransactionsFormatOptions(args []string) (TransactionsFormatOptions, e
 	}
 	if opts.Limit < 0 {
 		return TransactionsFormatOptions{}, errors.New("limit must be >= 0")
+	}
+
+	return opts, nil
+}
+
+func parseTransactionsVerifyOptions(args []string) (TransactionsVerificationOptions, error) {
+	fs := flag.NewFlagSet(commandTransactionsVerify, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	opts := TransactionsVerificationOptions{}
+	fs.IntVar(&opts.BatchSize, "batch-size", defaultBatchSize, "number of rows per batch")
+	fs.IntVar(&opts.Limit, "limit", 0, "maximum rows to scan (0 means unlimited)")
+	fs.IntVar(&opts.SampleLimit, "sample-limit", 50, "maximum discrepancy samples per class")
+	fs.StringVar(&opts.BaselineOut, "baseline-out", "", "path to write baseline snapshot JSON")
+	fs.StringVar(&opts.BaselineIn, "baseline-in", "", "path to read baseline snapshot JSON")
+	fs.StringVar(&opts.ReportFile, "report-file", "", "path to write markdown verification report")
+	fs.StringVar(&opts.MaxUpdatedAtRFC3339, "max-updated-at", "", "optional upper bound for updated_at (RFC3339), useful for stable before/after cohorts")
+
+	if err := fs.Parse(args); err != nil {
+		return TransactionsVerificationOptions{}, fmt.Errorf("parse %s options: %w", commandTransactionsVerify, err)
+	}
+	if fs.NArg() > 0 {
+		return TransactionsVerificationOptions{}, fmt.Errorf("unexpected extra arguments: %v", fs.Args())
+	}
+	if opts.BatchSize <= 0 {
+		return TransactionsVerificationOptions{}, errors.New("batch-size must be > 0")
+	}
+	if opts.BatchSize > maxBatchSize {
+		return TransactionsVerificationOptions{}, fmt.Errorf("batch-size must be <= %d", maxBatchSize)
+	}
+	if opts.Limit < 0 {
+		return TransactionsVerificationOptions{}, errors.New("limit must be >= 0")
+	}
+	if opts.SampleLimit <= 0 {
+		return TransactionsVerificationOptions{}, errors.New("sample-limit must be > 0")
 	}
 
 	return opts, nil
