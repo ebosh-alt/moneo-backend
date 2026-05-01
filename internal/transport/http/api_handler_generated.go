@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 
 	generated "moneo/internal/transport/http/generated"
 
@@ -59,6 +60,7 @@ func (h *APIHandler) invokeCatalog(ctx context.Context, request any, handlerName
 		return nil, fmt.Errorf("catalog handler method %s not found", handlerName)
 	}
 	method.Call([]reflect.Value{reflect.ValueOf(proxy)})
+	proxy.Writer.WriteHeaderNow()
 
 	return decode(recorder.Code, recorder.Body.Bytes())
 }
@@ -73,11 +75,86 @@ func extractRequestBody(request any) ([]byte, bool) {
 		return nil, false
 	}
 
-	payload, err := json.Marshal(bodyField.Interface())
+	sparsePayload, ok := toSparseJSONValue(bodyField)
+	if !ok {
+		return nil, false
+	}
+
+	payload, err := json.Marshal(sparsePayload)
 	if err != nil {
 		return []byte("{}"), true
 	}
 	return payload, true
+}
+
+func toSparseJSONValue(value reflect.Value) (any, bool) {
+	if !value.IsValid() {
+		return nil, false
+	}
+
+	switch value.Kind() {
+	case reflect.Pointer:
+		if value.IsNil() {
+			return nil, false
+		}
+		return toSparseJSONValue(value.Elem())
+	case reflect.Struct:
+		result := make(map[string]any)
+		valueType := value.Type()
+		for i := 0; i < value.NumField(); i++ {
+			fieldType := valueType.Field(i)
+			if fieldType.PkgPath != "" {
+				continue
+			}
+
+			jsonTag := fieldType.Tag.Get("json")
+			fieldName := fieldType.Name
+			if jsonTag != "" {
+				tagName := strings.Split(jsonTag, ",")[0]
+				if tagName == "-" {
+					continue
+				}
+				if tagName != "" {
+					fieldName = tagName
+				}
+			}
+
+			fieldValue := value.Field(i)
+			if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
+				continue
+			}
+
+			encodedField, ok := toSparseJSONValue(fieldValue)
+			if !ok {
+				continue
+			}
+			result[fieldName] = encodedField
+		}
+		return result, true
+	case reflect.Slice, reflect.Array:
+		items := make([]any, 0, value.Len())
+		for i := 0; i < value.Len(); i++ {
+			item, ok := toSparseJSONValue(value.Index(i))
+			if !ok {
+				items = append(items, nil)
+				continue
+			}
+			items = append(items, item)
+		}
+		return items, true
+	case reflect.Map:
+		if value.IsNil() {
+			return nil, false
+		}
+		return value.Interface(), true
+	case reflect.Interface:
+		if value.IsNil() {
+			return nil, false
+		}
+		return toSparseJSONValue(value.Elem())
+	default:
+		return value.Interface(), true
+	}
 }
 
 func (h *APIHandler) ListAccountsLegacy(ctx context.Context, request generated.ListAccountsLegacyRequestObject) (generated.ListAccountsLegacyResponseObject, error) {
