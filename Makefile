@@ -7,6 +7,7 @@ OPENAPI_GEN_CONFIG ?= oapi-codegen.yaml
 OPENAPI_GEN_FILE ?= internal/transport/http/generated/api.gen.go
 
 .PHONY: swag_init create-migration migrate-up migrate-down migrate-status migrate-version db-init
+.PHONY: ops-repair-transactions-dry-run ops-repair-transactions
 .PHONY: fmt vet test build check
 .PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-check
 
@@ -63,3 +64,9 @@ migrate-version:
 
 db-init:
 	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/dbinit
+
+ops-repair-transactions-dry-run:
+	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/ops repair transactions-format --dry-run
+
+ops-repair-transactions:
+	POSTGRES_URL='$(POSTGRES_URL)' go run ./cmd/ops repair transactions-format

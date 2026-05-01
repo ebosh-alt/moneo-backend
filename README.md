@@ -11,3 +11,9 @@
 - `internal/transport/http/generated/api.gen.go` is generated code and must not be edited manually.
 - `docs/openapi-format-compatibility-matrix.md` — migration compatibility rules for field formats (money/date/type/status).
 - `docs/openapi-dual-compatibility-rollout.md` — phased dual-read/dual-write rollout and rollback strategy.
+
+## Ops repair jobs
+
+- `make ops-repair-transactions-dry-run` — scan historical transactions and print repair report without DB changes.
+- `make ops-repair-transactions` — run idempotent historical transactions repair.
+- Direct CLI: `go run ./cmd/ops repair transactions-format --dry-run --batch-size=500 --limit=0`.
