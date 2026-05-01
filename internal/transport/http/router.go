@@ -1,9 +1,13 @@
 package http
 
 import (
+	"context"
+	"fmt"
 	"moneo/internal/transport/http/generated"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/gin-gonic/gin"
+	ginmiddleware "github.com/oapi-codegen/gin-middleware"
 )
 
 type RouterOptions struct {
@@ -51,7 +55,7 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 
 		if options.StrictAPIHandler != nil {
 			protectedAPI := router.Group("/", options.AuthMiddleware)
-			generated.RegisterHandlers(protectedAPI, generated.NewStrictHandler(options.StrictAPIHandler, nil))
+			registerStrictHandlers(protectedAPI, options.StrictAPIHandler)
 		}
 	} else {
 		router.GET("/auth/me", authHandler.Me)
@@ -60,9 +64,37 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		router.POST("/auth/send-verification-email", authHandler.SendVerificationEmail)
 
 		if options.StrictAPIHandler != nil {
-			generated.RegisterHandlers(router, generated.NewStrictHandler(options.StrictAPIHandler, nil))
+			publicAPI := router.Group("/")
+			registerStrictHandlers(publicAPI, options.StrictAPIHandler)
 		}
 	}
 
 	return router
+}
+
+func registerStrictHandlers(routes gin.IRouter, handler generated.StrictServerInterface) {
+	swagger, err := generated.GetSwagger()
+	if err != nil {
+		panic(fmt.Errorf("load embedded swagger: %w", err))
+	}
+	// Validator performs host/server checks. We don't want to bind runtime host here.
+	swagger.Servers = nil
+
+	routes.Use(ginmiddleware.OapiRequestValidatorWithOptions(swagger, &ginmiddleware.Options{
+		ErrorHandler: writeOpenAPIValidationError,
+		Options: openapi3filter.Options{
+			AuthenticationFunc: func(_ context.Context, _ *openapi3filter.AuthenticationInput) error {
+				// Auth is handled by our gin auth middleware before transport handlers.
+				return nil
+			},
+		},
+	}))
+	routes.Use(recoverEmptyBadRequestBody())
+
+	strict := generated.NewStrictHandler(handler, nil)
+	generated.RegisterHandlersWithOptions(routes, strict, generated.GinServerOptions{
+		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
+			writeOpenAPIValidationError(c, err.Error(), statusCode)
+		},
+	})
 }
