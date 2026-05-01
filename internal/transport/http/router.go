@@ -9,7 +9,6 @@ import (
 type RouterOptions struct {
 	AuthMiddleware     gin.HandlerFunc
 	SecurityMiddleware gin.HandlerFunc
-	CatalogHandler     *CatalogHandler
 	StrictAPIHandler   generated.StrictServerInterface
 }
 
@@ -53,12 +52,6 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 		if options.StrictAPIHandler != nil {
 			protectedAPI := router.Group("/", options.AuthMiddleware)
 			generated.RegisterHandlers(protectedAPI, generated.NewStrictHandler(options.StrictAPIHandler, nil))
-		} else if options.CatalogHandler != nil {
-			apiV1 := router.Group("/api/v1", options.AuthMiddleware)
-			registerCatalogRoutes(apiV1, options.CatalogHandler)
-
-			legacy := router.Group("/", options.AuthMiddleware)
-			registerCatalogRoutes(legacy, options.CatalogHandler)
 		}
 	} else {
 		router.GET("/auth/me", authHandler.Me)
@@ -68,46 +61,8 @@ func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.
 
 		if options.StrictAPIHandler != nil {
 			generated.RegisterHandlers(router, generated.NewStrictHandler(options.StrictAPIHandler, nil))
-		} else if options.CatalogHandler != nil {
-			apiV1 := router.Group("/api/v1")
-			registerCatalogRoutes(apiV1, options.CatalogHandler)
-
-			registerCatalogRoutes(router, options.CatalogHandler)
 		}
 	}
 
 	return router
-}
-
-func registerCatalogRoutes(routes gin.IRoutes, handler *CatalogHandler) {
-	routes.POST("/accounts", handler.CreateAccount)
-	routes.GET("/accounts", handler.ListAccounts)
-	routes.GET("/accounts/summary", handler.GetAccountsSummary)
-	routes.POST("/accounts/:accountId/archive", handler.ArchiveAccount)
-	routes.POST("/accounts/:accountId/restore", handler.RestoreAccount)
-	routes.GET("/accounts/:accountId", handler.GetAccount)
-	routes.PATCH("/accounts/:accountId", handler.PatchAccount)
-	routes.POST("/categories", handler.CreateCategory)
-	routes.GET("/categories", handler.ListCategories)
-	routes.POST("/categories/:categoryId/restore", handler.RestoreCategory)
-	routes.PATCH("/categories/:categoryId", handler.PatchCategory)
-	routes.DELETE("/categories/:categoryId", handler.DeleteCategory)
-	routes.POST("/categories/:categoryId/subcategories", handler.CreateSubcategory)
-	routes.GET("/categories/:categoryId/subcategories", handler.ListCategorySubcategories)
-	routes.GET("/categories/:categoryId", handler.GetCategory)
-	routes.POST("/subcategories/:subcategoryId/restore", handler.RestoreSubcategory)
-	routes.PATCH("/subcategories/:subcategoryId", handler.PatchSubcategory)
-	routes.DELETE("/subcategories/:subcategoryId", handler.DeleteSubcategory)
-	routes.GET("/subcategories", handler.ListSubcategories)
-	routes.GET("/subcategories/:subcategoryId", handler.GetSubcategory)
-	routes.POST("/transactions", handler.CreateTransaction)
-	routes.GET("/transactions", handler.ListTransactions)
-	routes.POST("/transactions/bulk", handler.CreateTransactionsBulk)
-	routes.PATCH("/transactions/bulk", handler.PatchTransactionsBulk)
-	routes.GET("/transactions/:transactionId", handler.GetTransaction)
-	routes.PATCH("/transactions/:transactionId", handler.PatchTransaction)
-	routes.DELETE("/transactions/:transactionId", handler.DeleteTransaction)
-	routes.POST("/transactions/:transactionId/post", handler.PostTransaction)
-	routes.POST("/transactions/:transactionId/cancel", handler.CancelTransaction)
-	routes.POST("/transactions/:transactionId/duplicate", handler.DuplicateTransaction)
 }

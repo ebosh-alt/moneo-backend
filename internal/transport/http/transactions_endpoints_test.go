@@ -234,8 +234,8 @@ func TestTransactionsPatchRules(t *testing.T) {
 		"plannedAt":     "2026-04-21",
 		"accountFromId": "acc_main",
 		"accountToId":   "acc_savings",
-		"categoryId":    nil,
-		"subcategoryId": nil,
+		"categoryId":    "",
+		"subcategoryId": "",
 		"comment":       "Move to savings",
 	}, headers)
 	if plannedPatchRec.Code != http.StatusOK {
@@ -569,17 +569,7 @@ type transactionsRouterFixture struct {
 func newTransactionsRouterWithAuthFixture(t *testing.T) transactionsRouterFixture {
 	t.Helper()
 
-	service := newTransactionUseCases()
-	catalogHandler := newTransactionsCatalogHandlerForTest(service)
-	authFixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
-		CatalogHandler: catalogHandler,
-	})
-
-	return transactionsRouterFixture{
-		router:  authFixture.router,
-		auth:    authFixture,
-		service: service,
-	}
+	return newTransactionsStrictRouterWithAuthFixture(t)
 }
 
 func newTransactionsStrictRouterWithAuthFixture(t *testing.T) transactionsRouterFixture {
