@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 
+	appidentity "moneo/internal/app/identity"
+	domainidentity "moneo/internal/domain/identity"
+	"moneo/internal/domain/shared"
 	generated "moneo/internal/transport/http/generated"
 
 	"github.com/gin-gonic/gin"
@@ -2052,555 +2056,394 @@ func (h *APIHandler) PostTransaction(ctx context.Context, request generated.Post
 }
 
 func (h *APIHandler) RegisterAuth(ctx context.Context, request generated.RegisterAuthRequestObject) (generated.RegisterAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.RegisterAuth201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.RegisterAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.RegisterAuth409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RegisterAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil {
+		return generated.RegisterAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "Register", decode)
+	if request.Body == nil || request.Body.Email == nil || request.Body.Password == nil || request.Body.PasswordConfirm == nil {
+		return generated.RegisterAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
+	}
+
+	tokens, err := h.auth.auth.Register(ctx, appidentity.RegisterInput{
+		Email:           *request.Body.Email,
+		Password:        *request.Body.Password,
+		PasswordConfirm: *request.Body.PasswordConfirm,
+	})
 	if err != nil {
-		return nil, err
+		return mapRegisterAuthError(err), nil
 	}
-	typed, ok := result.(generated.RegisterAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RegisterAuth", result)
+
+	if ginCtx, ctxErr := ginContextFromContext(ctx); ctxErr == nil {
+		setRefreshCookie(ginCtx, tokens.RefreshToken)
 	}
-	return typed, nil
+
+	return generated.RegisterAuth201JSONResponse{
+		AccessToken: tokens.AccessToken,
+		ExpiresIn:   int(tokens.ExpiresIn),
+	}, nil
 }
 
 func (h *APIHandler) LoginAuth(ctx context.Context, request generated.LoginAuthRequestObject) (generated.LoginAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.LoginAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.LoginAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.LoginAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.LoginAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil {
+		return generated.LoginAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "Login", decode)
+	if request.Body == nil || request.Body.Email == nil || request.Body.Password == nil {
+		return generated.LoginAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
+	}
+
+	tokens, err := h.auth.auth.Login(ctx, appidentity.LoginInput{
+		Email:    *request.Body.Email,
+		Password: *request.Body.Password,
+	})
 	if err != nil {
-		return nil, err
+		return mapLoginAuthError(err), nil
 	}
-	typed, ok := result.(generated.LoginAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for LoginAuth", result)
+
+	if ginCtx, ctxErr := ginContextFromContext(ctx); ctxErr == nil {
+		setRefreshCookie(ginCtx, tokens.RefreshToken)
 	}
-	return typed, nil
+
+	return generated.LoginAuth200JSONResponse{
+		AccessToken: tokens.AccessToken,
+		ExpiresIn:   int(tokens.ExpiresIn),
+	}, nil
 }
 
-func (h *APIHandler) RefreshAuth(ctx context.Context, request generated.RefreshAuthRequestObject) (generated.RefreshAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RefreshAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.RefreshAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RefreshAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RefreshAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+func (h *APIHandler) RefreshAuth(ctx context.Context, _ generated.RefreshAuthRequestObject) (generated.RefreshAuthResponseObject, error) {
+	if h == nil || h.auth == nil {
+		return generated.RefreshAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "Refresh", decode)
+	ginCtx, err := ginContextFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return generated.RefreshAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	typed, ok := result.(generated.RefreshAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RefreshAuth", result)
+
+	refreshToken, fromCookie, extractErr := extractRefreshToken(ginCtx)
+	if extractErr != nil {
+		return generated.RefreshAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
-	return typed, nil
+	if strings.TrimSpace(refreshToken) == "" {
+		return generated.RefreshAuth401JSONResponse{Error: "invalid_refresh_token"}, nil
+	}
+
+	tokens, refreshErr := h.auth.auth.Refresh(ctx, appidentity.RefreshInput{RefreshToken: refreshToken})
+	if refreshErr != nil {
+		return mapRefreshAuthError(refreshErr), nil
+	}
+	if fromCookie {
+		setRefreshCookie(ginCtx, refreshToken)
+	}
+
+	return generated.RefreshAuth200JSONResponse{
+		AccessToken: tokens.AccessToken,
+		ExpiresIn:   int(tokens.ExpiresIn),
+	}, nil
 }
 
-func (h *APIHandler) LogoutAuth(ctx context.Context, request generated.LogoutAuthRequestObject) (generated.LogoutAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.LogoutAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
+func (h *APIHandler) LogoutAuth(ctx context.Context, _ generated.LogoutAuthRequestObject) (generated.LogoutAuthResponseObject, error) {
+	if h == nil || h.auth == nil {
+		return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
+	}
+	ginCtx, err := ginContextFromContext(ctx)
+	if err != nil {
+		return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
+	}
+
+	refreshToken, _, extractErr := extractRefreshToken(ginCtx)
+	if extractErr != nil {
+		clearRefreshCookie(ginCtx)
+		return generated.LogoutAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
+	}
+
+	if strings.TrimSpace(refreshToken) != "" {
+		if logoutErr := h.auth.auth.Logout(ctx, appidentity.LogoutInput{RefreshToken: refreshToken}); logoutErr != nil && !errors.Is(logoutErr, appidentity.ErrInvalidRefreshToken) {
+			return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
+		}
+	} else {
+		accessToken := parseBearerToken(ginCtx.GetHeader("Authorization"))
+		if strings.TrimSpace(accessToken) != "" {
+			if logoutCurrentErr := h.auth.auth.LogoutCurrent(ctx, appidentity.LogoutCurrentInput{AccessToken: accessToken}); logoutCurrentErr != nil && !errors.Is(logoutCurrentErr, appidentity.ErrInvalidAccessToken) {
+				return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
 			}
-			return response, nil
-		case 400:
-			var response generated.LogoutAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.LogoutAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeAuth(ctx, request, "Logout", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.LogoutAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for LogoutAuth", result)
-	}
-	return typed, nil
+
+	clearRefreshCookie(ginCtx)
+	return generated.LogoutAuth200JSONResponse{Ok: true}, nil
 }
 
-func (h *APIHandler) LogoutAllAuth(ctx context.Context, request generated.LogoutAllAuthRequestObject) (generated.LogoutAllAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.LogoutAllAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.LogoutAllAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.LogoutAllAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+func (h *APIHandler) LogoutAllAuth(ctx context.Context, _ generated.LogoutAllAuthRequestObject) (generated.LogoutAllAuthResponseObject, error) {
+	if h == nil || h.auth == nil {
+		return generated.LogoutAllAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "LogoutAll", decode)
+	ginCtx, err := ginContextFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return generated.LogoutAllAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	typed, ok := result.(generated.LogoutAllAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for LogoutAllAuth", result)
+
+	accessToken := parseBearerToken(ginCtx.GetHeader("Authorization"))
+	if strings.TrimSpace(accessToken) == "" {
+		clearRefreshCookie(ginCtx)
+		return generated.LogoutAllAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
-	return typed, nil
+
+	if logoutErr := h.auth.auth.LogoutAll(ctx, appidentity.LogoutAllInput{AccessToken: accessToken}); logoutErr != nil {
+		return mapLogoutAllAuthError(logoutErr), nil
+	}
+
+	clearRefreshCookie(ginCtx)
+	return generated.LogoutAllAuth200JSONResponse{Ok: true}, nil
 }
 
-func (h *APIHandler) MeAuth(ctx context.Context, request generated.MeAuthRequestObject) (generated.MeAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.MeAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.MeAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.MeAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
-	}
-	result, err := h.invokeAuth(ctx, request, "Me", decode)
+func (h *APIHandler) MeAuth(ctx context.Context, _ generated.MeAuthRequestObject) (generated.MeAuthResponseObject, error) {
+	ginCtx, err := ginContextFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return generated.MeAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	typed, ok := result.(generated.MeAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for MeAuth", result)
+	user, userOK := UserFromContext(ginCtx)
+	_, sessionOK := SessionFromContext(ginCtx)
+	if !userOK || !sessionOK {
+		return generated.MeAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
-	return typed, nil
+
+	return generated.MeAuth200JSONResponse{
+		Id:            string(user.ID),
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		CreatedAt:     user.CreatedAt,
+	}, nil
 }
 
-func (h *APIHandler) SessionsAuth(ctx context.Context, request generated.SessionsAuthRequestObject) (generated.SessionsAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.SessionsAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.SessionsAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.SessionsAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+func (h *APIHandler) SessionsAuth(ctx context.Context, _ generated.SessionsAuthRequestObject) (generated.SessionsAuthResponseObject, error) {
+	if h == nil || h.auth == nil {
+		return generated.SessionsAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "Sessions", decode)
+	ginCtx, err := ginContextFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return generated.SessionsAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	typed, ok := result.(generated.SessionsAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for SessionsAuth", result)
+	user, userOK := UserFromContext(ginCtx)
+	_, sessionOK := SessionFromContext(ginCtx)
+	if !userOK || !sessionOK {
+		return generated.SessionsAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
-	return typed, nil
+
+	sessions, listErr := h.auth.auth.ListActiveSessions(ctx, appidentity.ListSessionsInput{UserID: user.ID})
+	if listErr != nil {
+		return generated.SessionsAuth500JSONResponse{Error: "internal_error"}, nil
+	}
+
+	response := make([]generated.AuthSession, 0, len(sessions))
+	for _, session := range sessions {
+		response = append(response, generated.AuthSession{
+			Id:         string(session.ID),
+			UserAgent:  session.UserAgent,
+			Ip:         session.IP,
+			DeviceName: session.DeviceName,
+			CreatedAt:  session.CreatedAt,
+			LastUsedAt: session.LastUsedAt,
+			ExpiresAt:  session.ExpiresAt,
+		})
+	}
+
+	return generated.SessionsAuth200JSONResponse{Sessions: response}, nil
 }
 
 func (h *APIHandler) RevokeSessionAuth(ctx context.Context, request generated.RevokeSessionAuthRequestObject) (generated.RevokeSessionAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 204:
-			return generated.RevokeSessionAuth204Response{}, nil
-		case 400:
-			var response generated.RevokeSessionAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RevokeSessionAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RevokeSessionAuth404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RevokeSessionAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil {
+		return generated.RevokeSessionAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "RevokeSession", decode)
+	ginCtx, err := ginContextFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return generated.RevokeSessionAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	typed, ok := result.(generated.RevokeSessionAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RevokeSessionAuth", result)
+	user, userOK := UserFromContext(ginCtx)
+	_, sessionOK := SessionFromContext(ginCtx)
+	if !userOK || !sessionOK {
+		return generated.RevokeSessionAuth401JSONResponse{Error: "invalid_access_token"}, nil
 	}
-	return typed, nil
+
+	sessionID := strings.TrimSpace(string(request.SessionId))
+	if sessionID == "" || !isUUID(sessionID) {
+		return generated.RevokeSessionAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
+	}
+
+	revokeErr := h.auth.auth.RevokeSession(ctx, appidentity.RevokeSessionInput{
+		UserID:    user.ID,
+		SessionID: shared.SessionID(sessionID),
+	})
+	if revokeErr != nil {
+		if errors.Is(revokeErr, appidentity.ErrSessionNotFound) {
+			return generated.RevokeSessionAuth404JSONResponse{Error: "session_not_found"}, nil
+		}
+		return generated.RevokeSessionAuth500JSONResponse{Error: "internal_error"}, nil
+	}
+
+	return generated.RevokeSessionAuth204Response{}, nil
 }
 
 func (h *APIHandler) ForgotPasswordAuth(ctx context.Context, request generated.ForgotPasswordAuthRequestObject) (generated.ForgotPasswordAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ForgotPasswordAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ForgotPasswordAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ForgotPasswordAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil || h.auth.postMVP == nil {
+		return generated.ForgotPasswordAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "ForgotPassword", decode)
-	if err != nil {
-		return nil, err
+	if request.Body == nil || request.Body.Email == nil {
+		return generated.ForgotPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
-	typed, ok := result.(generated.ForgotPasswordAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ForgotPasswordAuth", result)
+
+	forgotErr := h.auth.postMVP.ForgotPassword(ctx, appidentity.ForgotPasswordInput{Email: *request.Body.Email})
+	if forgotErr != nil {
+		return mapPostMVPForgotPasswordError(forgotErr), nil
 	}
-	return typed, nil
+	return generated.ForgotPasswordAuth200JSONResponse{Ok: true}, nil
 }
 
 func (h *APIHandler) ResetPasswordAuth(ctx context.Context, request generated.ResetPasswordAuthRequestObject) (generated.ResetPasswordAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ResetPasswordAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ResetPasswordAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ResetPasswordAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ResetPasswordAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil || h.auth.postMVP == nil {
+		return generated.ResetPasswordAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "ResetPassword", decode)
-	if err != nil {
-		return nil, err
+	if request.Body == nil || request.Body.Token == nil || request.Body.Password == nil || request.Body.PasswordConfirm == nil {
+		return generated.ResetPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
-	typed, ok := result.(generated.ResetPasswordAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ResetPasswordAuth", result)
+
+	resetErr := h.auth.postMVP.ResetPassword(ctx, appidentity.ResetPasswordInput{
+		Token:           *request.Body.Token,
+		Password:        *request.Body.Password,
+		PasswordConfirm: *request.Body.PasswordConfirm,
+	})
+	if resetErr != nil {
+		return mapPostMVPResetPasswordError(resetErr), nil
 	}
-	return typed, nil
+
+	if ginCtx, ctxErr := ginContextFromContext(ctx); ctxErr == nil {
+		clearRefreshCookie(ginCtx)
+	}
+	return generated.ResetPasswordAuth200JSONResponse{Ok: true}, nil
 }
 
-func (h *APIHandler) SendVerificationEmailAuth(ctx context.Context, request generated.SendVerificationEmailAuthRequestObject) (generated.SendVerificationEmailAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.SendVerificationEmailAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.SendVerificationEmailAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.SendVerificationEmailAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+func (h *APIHandler) SendVerificationEmailAuth(ctx context.Context, _ generated.SendVerificationEmailAuthRequestObject) (generated.SendVerificationEmailAuthResponseObject, error) {
+	if h == nil || h.auth == nil || h.auth.postMVP == nil {
+		return generated.SendVerificationEmailAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "SendVerificationEmail", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.SendVerificationEmailAuthResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for SendVerificationEmailAuth", result)
+		return generated.SendVerificationEmailAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
-	return typed, nil
+
+	sendErr := h.auth.postMVP.SendVerificationEmail(ctx, appidentity.SendVerificationEmailInput{UserID: userID})
+	if sendErr != nil {
+		return mapPostMVPSendVerificationEmailError(sendErr), nil
+	}
+	return generated.SendVerificationEmailAuth200JSONResponse{Ok: true}, nil
 }
 
 func (h *APIHandler) VerifyEmailAuth(ctx context.Context, request generated.VerifyEmailAuthRequestObject) (generated.VerifyEmailAuthResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.VerifyEmailAuth200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.VerifyEmailAuth400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.VerifyEmailAuth401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.VerifyEmailAuth500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.auth == nil || h.auth.postMVP == nil {
+		return generated.VerifyEmailAuth500JSONResponse{Error: "internal_error"}, nil
 	}
-	result, err := h.invokeAuth(ctx, request, "VerifyEmail", decode)
-	if err != nil {
-		return nil, err
+	if request.Body == nil || request.Body.Token == nil {
+		return generated.VerifyEmailAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
-	typed, ok := result.(generated.VerifyEmailAuthResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for VerifyEmailAuth", result)
+
+	verifyErr := h.auth.postMVP.VerifyEmail(ctx, appidentity.VerifyEmailInput{Token: *request.Body.Token})
+	if verifyErr != nil {
+		return mapPostMVPVerifyEmailError(verifyErr), nil
 	}
-	return typed, nil
+	return generated.VerifyEmailAuth200JSONResponse{Ok: true}, nil
+}
+
+func mapRegisterAuthError(err error) generated.RegisterAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrEmailAlreadyRegistered):
+		return generated.RegisterAuth409JSONResponse{Error: "duplicate_email"}
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.RegisterAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.RegisterAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapLoginAuthError(err error) generated.LoginAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidCredentials):
+		return generated.LoginAuth401JSONResponse{Error: "invalid_credentials"}
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.LoginAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.LoginAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapRefreshAuthError(err error) generated.RefreshAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidRefreshToken):
+		return generated.RefreshAuth401JSONResponse{Error: "invalid_refresh_token"}
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.RefreshAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.RefreshAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapLogoutAllAuthError(err error) generated.LogoutAllAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidAccessToken):
+		return generated.LogoutAllAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}
+	default:
+		return generated.LogoutAllAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapPostMVPForgotPasswordError(err error) generated.ForgotPasswordAuthResponseObject {
+	switch {
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.ForgotPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.ForgotPasswordAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapPostMVPResetPasswordError(err error) generated.ResetPasswordAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidPasswordResetToken):
+		return generated.ResetPasswordAuth401JSONResponse{Error: "invalid_reset_token"}
+	case errors.Is(err, appidentity.ErrInvalidAccessToken):
+		return generated.ResetPasswordAuth401JSONResponse{Error: "invalid_access_token"}
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.ResetPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.ResetPasswordAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapPostMVPSendVerificationEmailError(err error) generated.SendVerificationEmailAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidAccessToken):
+		return generated.SendVerificationEmailAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}
+	default:
+		return generated.SendVerificationEmailAuth500JSONResponse{Error: "internal_error"}
+	}
+}
+
+func mapPostMVPVerifyEmailError(err error) generated.VerifyEmailAuthResponseObject {
+	switch {
+	case errors.Is(err, appidentity.ErrInvalidEmailVerificationToken):
+		return generated.VerifyEmailAuth401JSONResponse{Error: "invalid_verification_token"}
+	case errors.Is(err, appidentity.ErrInvalidAccessToken):
+		return generated.VerifyEmailAuth401JSONResponse{Error: "invalid_access_token"}
+	case errors.Is(err, domainidentity.ErrInvalidEmail),
+		errors.Is(err, domainidentity.ErrInvalidPassword),
+		errors.Is(err, domainidentity.ErrPasswordConfirmMismatch):
+		return generated.VerifyEmailAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}
+	default:
+		return generated.VerifyEmailAuth500JSONResponse{Error: "internal_error"}
+	}
 }
