@@ -13,8 +13,10 @@ import (
 	"strings"
 
 	appaccounting "moneo/internal/app/accounting"
+	appcatalog "moneo/internal/app/catalog"
 	appidentity "moneo/internal/app/identity"
 	domainaccounting "moneo/internal/domain/accounting"
+	domaincatalog "moneo/internal/domain/catalog"
 	domainidentity "moneo/internal/domain/identity"
 	"moneo/internal/domain/shared"
 	generated "moneo/internal/transport/http/generated"
@@ -778,757 +780,816 @@ func toGeneratedAccountSummary(summary appaccounting.AccountSummary) (generated.
 }
 
 func (h *APIHandler) ListCategories(ctx context.Context, request generated.ListCategoriesRequestObject) (generated.ListCategoriesResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListCategories200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListCategories400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListCategories401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListCategories500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.categoriesList == nil {
+		return generated.ListCategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListCategories", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListCategoriesResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListCategories", result)
+		return generated.ListCategories401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	limit, offset, details := strictParseLimitOffset(request.Params.Limit, request.Params.Offset)
+	if len(details) > 0 {
+		return generated.ListCategories400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	includeArchived := false
+	if request.Params.IncludeArchived != nil {
+		includeArchived = bool(*request.Params.IncludeArchived)
+	}
+	includeSubcategories := true
+	if request.Params.IncludeSubcategories != nil {
+		includeSubcategories = bool(*request.Params.IncludeSubcategories)
+	}
+
+	var categoryType *domaincatalog.CategoryType
+	if request.Params.Type != nil {
+		parsedType, err := domaincatalog.ParseCategoryType(strings.TrimSpace(*request.Params.Type))
+		if err != nil {
+			return generated.ListCategories400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed",
+					catalogFieldError{Field: "type", Message: "type must be one of: required, flexible, saving, investment, debt, income"},
+				)),
+			}, nil
+		}
+		categoryType = &parsedType
+	}
+
+	sortMode := appcatalog.CategorySortSortOrderAsc
+	if request.Params.Sort != nil {
+		candidate := appcatalog.CategorySort(*request.Params.Sort)
+		if !slices.Contains([]appcatalog.CategorySort{
+			appcatalog.CategorySortSortOrderAsc,
+			appcatalog.CategorySortNameAsc,
+			appcatalog.CategorySortCreatedAtDesc,
+		}, candidate) {
+			return generated.ListCategories400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed",
+					catalogFieldError{Field: "sort", Message: "sort must be one of: sortOrder:asc, name:asc, createdAt:desc"},
+				)),
+			}, nil
+		}
+		sortMode = candidate
+	}
+
+	categories, err := h.catalog.categoriesList.ListByUser(ctx, appcatalog.ListCategoriesInput{
+		UserID:          userID,
+		IncludeArchived: includeArchived,
+		Type:            categoryType,
+		Sort:            sortMode,
+	})
+	if err != nil {
+		return generated.ListCategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	pagedCategories, total := paginate(categories, limit, offset)
+	items := make([]generated.Category, 0, len(pagedCategories))
+
+	if !includeSubcategories {
+		for _, category := range pagedCategories {
+			items = append(items, toGeneratedCategory(category, nil))
+		}
+		return generated.ListCategories200JSONResponse{
+			Items: items,
+			Pagination: generated.Pagination{
+				Limit:  limit,
+				Offset: offset,
+				Total:  total,
+			},
+		}, nil
+	}
+
+	if h.catalog.subcategoriesListByCategory == nil {
+		return generated.ListCategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	for _, category := range pagedCategories {
+		subcategories, subcategoriesErr := h.catalog.subcategoriesListByCategory.List(
+			ctx,
+			appcatalog.ListSubcategoriesByCategoryInput{
+				UserID:          userID,
+				CategoryID:      category.ID(),
+				IncludeArchived: false,
+			},
+		)
+		if subcategoriesErr != nil {
+			return generated.ListCategories500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		items = append(items, toGeneratedCategory(category, subcategories))
+	}
+
+	return generated.ListCategories200JSONResponse{
+		Items: items,
+		Pagination: generated.Pagination{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}, nil
 }
 
 func (h *APIHandler) CreateCategory(ctx context.Context, request generated.CreateCategoryRequestObject) (generated.CreateCategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateCategory201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateCategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateCategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateCategory409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateCategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.categoriesCreate == nil {
+		return generated.CreateCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.CreateCategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.CreateCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := createCategoryRequest{}
+	if request.Body.Name != nil {
+		req.Name = *request.Body.Name
+	}
+	if request.Body.Type != nil {
+		req.Type = *request.Body.Type
+	}
+	req.Color = request.Body.Color
+	req.SortOrder = request.Body.SortOrder
+
+	input, details := validateCreateCategoryRequest(userID, req)
+	if len(details) > 0 {
+		return generated.CreateCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	category, err := h.catalog.categoriesCreate.Create(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			return generated.CreateCategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Category with this name already exists", catalogFieldError{Field: "name", Message: "category name must be unique per user"},
+				)),
+			}, nil
+		case errors.Is(err, domaincatalog.ErrInvalidCategoryName),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryType),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryColor):
+			return generated.CreateCategory400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.CreateCategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateCategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateCategory", result)
-	}
-	return typed, nil
+
+	return generated.CreateCategory201JSONResponse(toGeneratedCategory(category, nil)), nil
 }
 
 func (h *APIHandler) DeleteCategory(ctx context.Context, request generated.DeleteCategoryRequestObject) (generated.DeleteCategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.DeleteCategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DeleteCategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DeleteCategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DeleteCategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.categoriesArchive == nil {
+		return generated.DeleteCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.DeleteCategoryResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteCategory", result)
+		return generated.DeleteCategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.DeleteCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	category, err := h.catalog.categoriesArchive.Archive(ctx, userID, shared.CategoryID(categoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			return generated.DeleteCategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.DeleteCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.DeleteCategory200JSONResponse(toGeneratedCategory(category, nil)), nil
 }
 
 func (h *APIHandler) GetCategory(ctx context.Context, request generated.GetCategoryRequestObject) (generated.GetCategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetCategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetCategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetCategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetCategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetCategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.categoriesGet == nil {
+		return generated.GetCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetCategoryResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetCategory", result)
+		return generated.GetCategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.GetCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "categoryId", Message: "categoryId is required"},
+			)),
+		}, nil
+	}
+
+	includeSubcategories := true
+	if request.Params.IncludeSubcategories != nil {
+		includeSubcategories = bool(*request.Params.IncludeSubcategories)
+	}
+
+	category, err := h.catalog.categoriesGet.GetByID(ctx, userID, shared.CategoryID(categoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			return generated.GetCategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.GetCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	var subcategories []domaincatalog.Subcategory
+	if includeSubcategories {
+		if h.catalog.subcategoriesListByCategory == nil {
+			return generated.GetCategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		listed, subErr := h.catalog.subcategoriesListByCategory.List(ctx, appcatalog.ListSubcategoriesByCategoryInput{
+			UserID:          userID,
+			CategoryID:      category.ID(),
+			IncludeArchived: false,
+		})
+		if subErr != nil {
+			return generated.GetCategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		subcategories = listed
+	}
+
+	return generated.GetCategory200JSONResponse(toGeneratedCategory(category, subcategories)), nil
 }
 
 func (h *APIHandler) PatchCategory(ctx context.Context, request generated.PatchCategoryRequestObject) (generated.PatchCategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchCategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchCategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchCategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchCategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchCategory409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchCategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.categoriesUpdate == nil {
+		return generated.PatchCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.PatchCategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.PatchCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "categoryId", Message: "categoryId is required"},
+			)),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.PatchCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := patchCategoryRequest{
+		Name:      request.Body.Name,
+		Type:      request.Body.Type,
+		Color:     request.Body.Color,
+		SortOrder: request.Body.SortOrder,
+	}
+	input, details := validatePatchCategoryRequest(userID, shared.CategoryID(categoryID), req)
+	if len(details) > 0 {
+		return generated.PatchCategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	category, err := h.catalog.categoriesUpdate.Update(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
+			return generated.PatchCategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			return generated.PatchCategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Category with this name already exists", catalogFieldError{Field: "name", Message: "category name must be unique per user"},
+				)),
+			}, nil
+		case errors.Is(err, appcatalog.ErrConcurrentCategoryUpdate):
+			return generated.PatchCategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Conflict", catalogFieldError{Field: "body", Message: "category was modified concurrently, retry with fresh state"},
+				)),
+			}, nil
+		case errors.Is(err, domaincatalog.ErrInvalidCategoryName),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryType),
+			errors.Is(err, domaincatalog.ErrInvalidCategoryColor):
+			return generated.PatchCategory400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.PatchCategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchCategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchCategory", result)
-	}
-	return typed, nil
+
+	return generated.PatchCategory200JSONResponse(toGeneratedCategory(category, nil)), nil
 }
 
 func (h *APIHandler) RestoreCategory(ctx context.Context, request generated.RestoreCategoryRequestObject) (generated.RestoreCategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RestoreCategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreCategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreCategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.RestoreCategory409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreCategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.categoriesRestore == nil {
+		return generated.RestoreCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.RestoreCategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.RestoreCategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	category, err := h.catalog.categoriesRestore.Restore(ctx, userID, shared.CategoryID(categoryID))
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
+			return generated.RestoreCategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
+			return generated.RestoreCategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Category with this name already exists", catalogFieldError{Field: "name", Message: "category name must be unique per user"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.RestoreCategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreCategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.RestoreCategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreCategory", result)
-	}
-	return typed, nil
+
+	return generated.RestoreCategory200JSONResponse(toGeneratedCategory(category, nil)), nil
 }
 
 func (h *APIHandler) ListCategorySubcategories(ctx context.Context, request generated.ListCategorySubcategoriesRequestObject) (generated.ListCategorySubcategoriesResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListCategorySubcategories200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListCategorySubcategories400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListCategorySubcategories401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.ListCategorySubcategories404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListCategorySubcategories500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesListByCategory == nil {
+		return generated.ListCategorySubcategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListCategorySubcategories", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListCategorySubcategoriesResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListCategorySubcategories", result)
+		return generated.ListCategorySubcategories401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.ListCategorySubcategories400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "categoryId", Message: "categoryId is required"},
+			)),
+		}, nil
+	}
+
+	limit, offset, details := strictParseLimitOffset(request.Params.Limit, request.Params.Offset)
+	if len(details) > 0 {
+		return generated.ListCategorySubcategories400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+	includeArchived := false
+	if request.Params.IncludeArchived != nil {
+		includeArchived = bool(*request.Params.IncludeArchived)
+	}
+
+	subcategories, err := h.catalog.subcategoriesListByCategory.List(ctx, appcatalog.ListSubcategoriesByCategoryInput{
+		UserID:          userID,
+		CategoryID:      shared.CategoryID(categoryID),
+		IncludeArchived: includeArchived,
+	})
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
+			return generated.ListCategorySubcategories404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.ListCategorySubcategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	items := make([]generated.Subcategory, 0, len(subcategories))
+	for _, subcategory := range subcategories {
+		items = append(items, toGeneratedSubcategory(subcategory))
+	}
+
+	pagedItems, total := paginate(items, limit, offset)
+	return generated.ListCategorySubcategories200JSONResponse{
+		Items: pagedItems,
+		Pagination: generated.Pagination{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}, nil
 }
 
 func (h *APIHandler) CreateSubcategory(ctx context.Context, request generated.CreateSubcategoryRequestObject) (generated.CreateSubcategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateSubcategory201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateSubcategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateSubcategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateSubcategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateSubcategory409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateSubcategory422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateSubcategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesCreate == nil {
+		return generated.CreateSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.CreateSubcategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	categoryID := strings.TrimSpace(string(request.CategoryId))
+	if categoryID == "" {
+		return generated.CreateSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "categoryId", Message: "categoryId is required"},
+			)),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.CreateSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := createSubcategoryRequest{SortOrder: request.Body.SortOrder}
+	if request.Body.Name != nil {
+		req.Name = *request.Body.Name
+	}
+	input, details := validateCreateSubcategoryRequest(userID, shared.CategoryID(categoryID), req)
+	if len(details) > 0 {
+		return generated.CreateSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	subcategory, err := h.catalog.subcategoriesCreate.Create(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrCategoryNotFound):
+			return generated.CreateSubcategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			return generated.CreateSubcategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Subcategory with this name already exists", catalogFieldError{Field: "name", Message: "subcategory name must be unique per category"},
+				)),
+			}, nil
+		case errors.Is(err, appcatalog.ErrParentCategoryArchived):
+			return generated.CreateSubcategory422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{Field: "categoryId", Message: "parent category is archived"},
+				)),
+			}, nil
+		case errors.Is(err, domaincatalog.ErrInvalidSubcategoryName):
+			return generated.CreateSubcategory400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed", catalogFieldError{Field: "name", Message: "name must be between 1 and 100 characters"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.CreateSubcategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateSubcategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateSubcategory", result)
-	}
-	return typed, nil
+
+	return generated.CreateSubcategory201JSONResponse(toGeneratedSubcategory(subcategory)), nil
 }
 
 func (h *APIHandler) ListSubcategories(ctx context.Context, request generated.ListSubcategoriesRequestObject) (generated.ListSubcategoriesResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListSubcategories200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListSubcategories400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListSubcategories401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListSubcategories500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesList == nil {
+		return generated.ListSubcategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListSubcategories", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListSubcategoriesResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListSubcategories", result)
+		return generated.ListSubcategories401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	limit, offset, details := strictParseLimitOffset(request.Params.Limit, request.Params.Offset)
+	if len(details) > 0 {
+		return generated.ListSubcategories400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	subcategories, err := h.catalog.subcategoriesList.ListByUserID(ctx, userID)
+	if err != nil {
+		return generated.ListSubcategories500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	items := make([]generated.Subcategory, 0, len(subcategories))
+	for _, subcategory := range subcategories {
+		items = append(items, toGeneratedSubcategory(subcategory))
+	}
+	pagedItems, total := paginate(items, limit, offset)
+
+	return generated.ListSubcategories200JSONResponse{
+		Items: pagedItems,
+		Pagination: generated.Pagination{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}, nil
 }
 
 func (h *APIHandler) DeleteSubcategory(ctx context.Context, request generated.DeleteSubcategoryRequestObject) (generated.DeleteSubcategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.DeleteSubcategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DeleteSubcategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DeleteSubcategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DeleteSubcategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesArchive == nil {
+		return generated.DeleteSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.DeleteSubcategoryResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteSubcategory", result)
+		return generated.DeleteSubcategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	subcategoryID := strings.TrimSpace(string(request.SubcategoryId))
+	if subcategoryID == "" {
+		return generated.DeleteSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	subcategory, err := h.catalog.subcategoriesArchive.Archive(ctx, userID, shared.SubcategoryID(subcategoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrSubcategoryNotFound) {
+			return generated.DeleteSubcategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.DeleteSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.DeleteSubcategory200JSONResponse(toGeneratedSubcategory(subcategory)), nil
 }
 
 func (h *APIHandler) GetSubcategory(ctx context.Context, request generated.GetSubcategoryRequestObject) (generated.GetSubcategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetSubcategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetSubcategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetSubcategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetSubcategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetSubcategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesGet == nil {
+		return generated.GetSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetSubcategoryResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetSubcategory", result)
+		return generated.GetSubcategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	subcategoryID := strings.TrimSpace(string(request.SubcategoryId))
+	if subcategoryID == "" {
+		return generated.GetSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "subcategoryId", Message: "subcategoryId is required"},
+			)),
+		}, nil
+	}
+
+	subcategory, err := h.catalog.subcategoriesGet.GetByID(ctx, userID, shared.SubcategoryID(subcategoryID))
+	if err != nil {
+		if errors.Is(err, appcatalog.ErrSubcategoryNotFound) {
+			return generated.GetSubcategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.GetSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.GetSubcategory200JSONResponse(toGeneratedSubcategory(subcategory)), nil
 }
 
 func (h *APIHandler) PatchSubcategory(ctx context.Context, request generated.PatchSubcategoryRequestObject) (generated.PatchSubcategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchSubcategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchSubcategory400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchSubcategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchSubcategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchSubcategory409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchSubcategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesUpdate == nil {
+		return generated.PatchSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.PatchSubcategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	subcategoryID := strings.TrimSpace(string(request.SubcategoryId))
+	if subcategoryID == "" {
+		return generated.PatchSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "subcategoryId", Message: "subcategoryId is required"},
+			)),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.PatchSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := patchSubcategoryRequest{
+		Name:      request.Body.Name,
+		SortOrder: request.Body.SortOrder,
+	}
+	input, details := validatePatchSubcategoryRequest(userID, shared.SubcategoryID(subcategoryID), req)
+	if len(details) > 0 {
+		return generated.PatchSubcategory400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	subcategory, err := h.catalog.subcategoriesUpdate.Update(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
+			return generated.PatchSubcategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			return generated.PatchSubcategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Subcategory with this name already exists", catalogFieldError{Field: "name", Message: "subcategory name must be unique per category"},
+				)),
+			}, nil
+		case errors.Is(err, appcatalog.ErrConcurrentSubcategoryUpdate):
+			return generated.PatchSubcategory409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Conflict", catalogFieldError{Field: "body", Message: "subcategory was modified concurrently, retry with fresh state"},
+				)),
+			}, nil
+		case errors.Is(err, domaincatalog.ErrInvalidSubcategoryName):
+			return generated.PatchSubcategory400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed", catalogFieldError{Field: "name", Message: "name must be between 1 and 100 characters"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.PatchSubcategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchSubcategory", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchSubcategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchSubcategory", result)
-	}
-	return typed, nil
+
+	return generated.PatchSubcategory200JSONResponse(toGeneratedSubcategory(subcategory)), nil
 }
 
 func (h *APIHandler) RestoreSubcategory(ctx context.Context, request generated.RestoreSubcategoryRequestObject) (generated.RestoreSubcategoryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RestoreSubcategory200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreSubcategory401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreSubcategory404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.RestoreSubcategory422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreSubcategory500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.subcategoriesRestore == nil {
+		return generated.RestoreSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.RestoreSubcategory401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	subcategoryID := strings.TrimSpace(string(request.SubcategoryId))
+	if subcategoryID == "" {
+		return generated.RestoreSubcategory500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	subcategory, err := h.catalog.subcategoriesRestore.Restore(ctx, userID, shared.SubcategoryID(subcategoryID))
+	if err != nil {
+		switch {
+		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
+			return generated.RestoreSubcategory404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appcatalog.ErrSubcategoryNameAlreadyExists):
+			return generated.RestoreSubcategory422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{Field: "name", Message: "subcategory name must be unique per category"},
+				)),
+			}, nil
+		case errors.Is(err, appcatalog.ErrParentCategoryArchived):
+			return generated.RestoreSubcategory422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{Field: "categoryId", Message: "parent category is archived"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.RestoreSubcategory500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreSubcategory", decode)
-	if err != nil {
-		return nil, err
+	return generated.RestoreSubcategory200JSONResponse(toGeneratedSubcategory(subcategory)), nil
+}
+
+func toGeneratedCategory(category domaincatalog.Category, subcategories []domaincatalog.Subcategory) generated.Category {
+	items := make([]generated.Subcategory, 0, len(subcategories))
+	for _, item := range subcategories {
+		items = append(items, toGeneratedSubcategory(item))
 	}
-	typed, ok := result.(generated.RestoreSubcategoryResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreSubcategory", result)
+	return generated.Category{
+		Id:            string(category.ID()),
+		Name:          category.Name(),
+		Type:          string(category.Type()),
+		Color:         category.Color(),
+		SortOrder:     category.SortOrder(),
+		IsArchived:    category.ArchivedAt() != nil,
+		ArchivedAt:    category.ArchivedAt(),
+		CreatedAt:     category.CreatedAt(),
+		UpdatedAt:     category.UpdatedAt(),
+		Subcategories: items,
 	}
-	return typed, nil
+}
+
+func toGeneratedSubcategory(subcategory domaincatalog.Subcategory) generated.Subcategory {
+	return generated.Subcategory{
+		Id:         string(subcategory.ID()),
+		CategoryId: string(subcategory.CategoryID()),
+		Name:       subcategory.Name(),
+		SortOrder:  subcategory.SortOrder(),
+		IsArchived: subcategory.ArchivedAt() != nil,
+		ArchivedAt: subcategory.ArchivedAt(),
+		CreatedAt:  subcategory.CreatedAt(),
+		UpdatedAt:  subcategory.UpdatedAt(),
+	}
 }
 
 func (h *APIHandler) ListTransactions(ctx context.Context, request generated.ListTransactionsRequestObject) (generated.ListTransactionsResponseObject, error) {
