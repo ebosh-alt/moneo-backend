@@ -1,0 +1,91 @@
+openapi: 3.0.3
+info:
+  title: Moneo Backend API (as-is)
+  version: 0.1.0
+  license:
+    name: Proprietary
+    url: https://example.com/license
+  description: |
+    Contract documents current behavior of auth, catalogs and transactions endpoints as implemented.
+
+servers:
+  - url: /
+
+tags:
+  - name: Auth
+    description: Authentication and authorization endpoints.
+  - name: Accounts
+    description: Accounts catalog endpoints.
+  - name: Categories
+    description: Categories catalog endpoints.
+  - name: Subcategories
+    description: Subcategories catalog endpoints.
+  - name: Transactions
+    description: Transactions endpoints.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/auth/register:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1register'
+  /api/v1/auth/login:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1login'
+  /api/v1/auth/refresh:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1refresh'
+  /api/v1/auth/logout:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1logout'
+  /api/v1/auth/logout-all:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1logout-all'
+  /api/v1/auth/me:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1me'
+  /api/v1/auth/sessions:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1sessions'
+  /api/v1/auth/sessions/{sessionId}:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1sessions~1{sessionId}'
+  /api/v1/auth/forgot-password:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1forgot-password'
+  /api/v1/auth/reset-password:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1reset-password'
+  /api/v1/auth/send-verification-email:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1send-verification-email'
+  /api/v1/auth/verify-email:
+    $ref: './paths/auth.yaml#/paths/~1api~1v1~1auth~1verify-email'
+  /api/v1/accounts:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1accounts'
+  /api/v1/accounts/summary:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1accounts~1summary'
+  /api/v1/accounts/{accountId}:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1accounts~1{accountId}'
+  /api/v1/accounts/{accountId}/archive:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1accounts~1{accountId}~1archive'
+  /api/v1/accounts/{accountId}/restore:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1accounts~1{accountId}~1restore'
+  /api/v1/categories:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1categories'
+  /api/v1/categories/{categoryId}:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1categories~1{categoryId}'
+  /api/v1/categories/{categoryId}/restore:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1categories~1{categoryId}~1restore'
+  /api/v1/categories/{categoryId}/subcategories:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1categories~1{categoryId}~1subcategories'
+  /api/v1/subcategories:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1subcategories'
+  /api/v1/subcategories/{subcategoryId}:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1subcategories~1{subcategoryId}'
+  /api/v1/subcategories/{subcategoryId}/restore:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1subcategories~1{subcategoryId}~1restore'
+  /api/v1/transactions:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions'
+  /api/v1/transactions/bulk:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions~1bulk'
+  /api/v1/transactions/{transactionId}:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions~1{transactionId}'
+  /api/v1/transactions/{transactionId}/post:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions~1{transactionId}~1post'
+  /api/v1/transactions/{transactionId}/cancel:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions~1{transactionId}~1cancel'
+  /api/v1/transactions/{transactionId}/duplicate:
+    $ref: './paths/v1.yaml#/paths/~1api~1v1~1transactions~1{transactionId}~1duplicate'
+components:
+  $ref: './schemas/components.yaml#/components'

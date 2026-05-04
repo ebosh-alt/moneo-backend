@@ -34,25 +34,25 @@ type AuthSecurityConfig struct {
 }
 
 var defaultAuthRateLimits = map[string]AuthRateLimitRule{
-	"/auth/login":                   {MaxAttempts: 5, Window: time.Minute},
-	"/auth/register":                {MaxAttempts: 5, Window: time.Minute},
-	"/auth/reset-password":          {MaxAttempts: 5, Window: time.Minute},
-	"/auth/refresh":                 {MaxAttempts: 10, Window: time.Minute},
-	"/auth/verify-email":            {MaxAttempts: 10, Window: time.Minute},
-	"/auth/send-verification-email": {MaxAttempts: 5, Window: time.Minute},
-	"/auth/forgot-password":         {MaxAttempts: 5, Window: time.Minute},
+	"/api/v1/auth/login":                   {MaxAttempts: 5, Window: time.Minute},
+	"/api/v1/auth/register":                {MaxAttempts: 5, Window: time.Minute},
+	"/api/v1/auth/reset-password":          {MaxAttempts: 5, Window: time.Minute},
+	"/api/v1/auth/refresh":                 {MaxAttempts: 10, Window: time.Minute},
+	"/api/v1/auth/verify-email":            {MaxAttempts: 10, Window: time.Minute},
+	"/api/v1/auth/send-verification-email": {MaxAttempts: 5, Window: time.Minute},
+	"/api/v1/auth/forgot-password":         {MaxAttempts: 5, Window: time.Minute},
 }
 
 var authHTTPSRequiredPaths = map[string]struct{}{
-	"/auth/login":                   {},
-	"/auth/register":                {},
-	"/auth/reset-password":          {},
-	"/auth/refresh":                 {},
-	"/auth/logout":                  {},
-	"/auth/logout-all":              {},
-	"/auth/verify-email":            {},
-	"/auth/send-verification-email": {},
-	"/auth/forgot-password":         {},
+	"/api/v1/auth/login":                   {},
+	"/api/v1/auth/register":                {},
+	"/api/v1/auth/reset-password":          {},
+	"/api/v1/auth/refresh":                 {},
+	"/api/v1/auth/logout":                  {},
+	"/api/v1/auth/logout-all":              {},
+	"/api/v1/auth/verify-email":            {},
+	"/api/v1/auth/send-verification-email": {},
+	"/api/v1/auth/forgot-password":         {},
 }
 
 func DefaultAuthSecurityConfig() AuthSecurityConfig {
@@ -117,23 +117,23 @@ func requiresHTTPS(path string) bool {
 
 func suspiciousEvent(path string, statusCode int) (string, bool) {
 	switch path {
-	case "/auth/login":
+	case "/api/v1/auth/login":
 		if statusCode == http.StatusUnauthorized {
 			return "auth_login_failed", true
 		}
-	case "/auth/refresh":
+	case "/api/v1/auth/refresh":
 		if statusCode == http.StatusUnauthorized {
 			return "auth_refresh_failed", true
 		}
-	case "/auth/reset-password":
+	case "/api/v1/auth/reset-password":
 		if statusCode == http.StatusUnauthorized {
 			return "auth_reset_password_failed", true
 		}
-	case "/auth/verify-email":
+	case "/api/v1/auth/verify-email":
 		if statusCode == http.StatusUnauthorized {
 			return "auth_verify_email_failed", true
 		}
-	case "/auth/register":
+	case "/api/v1/auth/register":
 		if statusCode == http.StatusConflict {
 			return "auth_register_duplicate_email", true
 		}

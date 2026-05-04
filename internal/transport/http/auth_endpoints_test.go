@@ -23,7 +23,7 @@ import (
 func TestRegisterEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "User@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -75,7 +75,7 @@ func TestLoginEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
 		t.Fatalf("register fixture user: %v", err)
 	}
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
@@ -114,7 +114,7 @@ func TestLoginEndpointReturnsTokensAndSetsRefreshCookie(t *testing.T) {
 func TestRegisterEndpointRejectsDuplicateEmail(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	first := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	first := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -123,7 +123,7 @@ func TestRegisterEndpointRejectsDuplicateEmail(t *testing.T) {
 		t.Fatalf("expected first register status 201, got %d", first.Code)
 	}
 
-	second := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	second := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "USER@example.com",
 		"password":         "AnotherStrongPassw0rd!",
 		"password_confirm": "AnotherStrongPassw0rd!",
@@ -151,7 +151,7 @@ func TestLoginEndpointRejectsInvalidCredentials(t *testing.T) {
 		t.Fatalf("register fixture user: %v", err)
 	}
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "WrongPassw0rd!",
 	}, nil)
@@ -170,7 +170,7 @@ func TestLoginEndpointRejectsInvalidCredentials(t *testing.T) {
 func TestRefreshEndpointUpdatesAccessTokenAndLastUsedAt(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -182,7 +182,7 @@ func TestRefreshEndpointUpdatesAccessTokenAndLastUsedAt(t *testing.T) {
 	}
 
 	fixture.clock.Advance(2 * time.Minute)
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", nil, nil, refreshCookie)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -215,14 +215,14 @@ func TestRefreshEndpointUpdatesAccessTokenAndLastUsedAt(t *testing.T) {
 func TestRefreshEndpointAcceptsBodyTokenForMacOSFlow(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
 	}, nil)
 	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", map[string]any{
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", map[string]any{
 		"refresh_token": refreshCookie.Value,
 	}, nil)
 
@@ -244,7 +244,7 @@ func TestRefreshEndpointAcceptsBodyTokenForMacOSFlow(t *testing.T) {
 func TestRefreshEndpointRejectsRevokedSession(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -254,7 +254,7 @@ func TestRefreshEndpointRejectsRevokedSession(t *testing.T) {
 	now := fixture.clock.Now()
 	fixture.sessionRepo.sessions[0].RevokedAt = &now
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", nil, nil, refreshCookie)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", rec.Code)
 	}
@@ -269,7 +269,7 @@ func TestRefreshEndpointRejectsRevokedSession(t *testing.T) {
 func TestRefreshEndpointRejectsExpiredSession(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -279,7 +279,7 @@ func TestRefreshEndpointRejectsExpiredSession(t *testing.T) {
 	session := fixture.sessionRepo.sessions[0]
 	fixture.clock.Set(session.ExpiresAt.Add(time.Second))
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, refreshCookie)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", nil, nil, refreshCookie)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", rec.Code)
 	}
@@ -294,7 +294,7 @@ func TestRefreshEndpointRejectsExpiredSession(t *testing.T) {
 func TestLogoutEndpointRevokesSessionAndClearsCookie(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -302,7 +302,7 @@ func TestLogoutEndpointRevokesSessionAndClearsCookie(t *testing.T) {
 	refreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
 
 	fixture.clock.Advance(5 * time.Minute)
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout", nil, nil, refreshCookie)
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/logout", nil, nil, refreshCookie)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -323,7 +323,7 @@ func TestLogoutEndpointRevokesSessionAndClearsCookie(t *testing.T) {
 func TestLogoutEndpointRevokesCurrentSessionFromAccessTokenWithoutCookie(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -335,7 +335,7 @@ func TestLogoutEndpointRevokesCurrentSessionFromAccessTokenWithoutCookie(t *test
 	var registerResponse authResponse
 	decodeJSONResponse(t, register, &registerResponse)
 
-	logout := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout", nil, map[string]string{
+	logout := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/logout", nil, map[string]string{
 		"Authorization": "Bearer " + registerResponse.AccessToken,
 	})
 	if logout.Code != http.StatusOK {
@@ -353,14 +353,14 @@ func TestLogoutEndpointRevokesCurrentSessionFromAccessTokenWithoutCookie(t *test
 func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
 	}, nil)
 	firstRefreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
 
-	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
@@ -373,7 +373,7 @@ func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(
 		t.Fatalf("expected 2 sessions, got %d", len(fixture.sessionRepo.sessions))
 	}
 
-	logoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+	logoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/logout-all", nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	}, secondRefreshCookie)
 	if logoutAll.Code != http.StatusOK {
@@ -389,12 +389,12 @@ func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(
 		}
 	}
 
-	refreshAfterLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, firstRefreshCookie)
+	refreshAfterLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", nil, nil, firstRefreshCookie)
 	if refreshAfterLogoutAll.Code != http.StatusUnauthorized {
 		t.Fatalf("expected refresh with revoked session status 401, got %d", refreshAfterLogoutAll.Code)
 	}
 
-	secondLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+	secondLogoutAll := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/logout-all", nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	}, nil)
 	if secondLogoutAll.Code != http.StatusOK {
@@ -402,7 +402,7 @@ func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(
 	}
 
 	fixture.clock.Advance(16 * time.Minute)
-	expiredAccessTokenCall := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/logout-all", nil, map[string]string{
+	expiredAccessTokenCall := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/logout-all", nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	}, nil)
 	if expiredAccessTokenCall.Code != http.StatusUnauthorized {
@@ -419,7 +419,7 @@ func TestLogoutAllEndpointRevokesAllSessionsAndKeepsAccessTokenValidUntilExpiry(
 func TestAuthMeRejectsMissingToken(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, nil)
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/me", nil, nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", rec.Code)
 	}
@@ -434,7 +434,7 @@ func TestAuthMeRejectsMissingToken(t *testing.T) {
 func TestAuthMeRejectsExpiredToken(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -444,7 +444,7 @@ func TestAuthMeRejectsExpiredToken(t *testing.T) {
 	decodeJSONResponse(t, register, &registerResponse)
 
 	fixture.clock.Advance(16 * time.Minute)
-	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/me", nil, map[string]string{
 		"Authorization": "Bearer " + registerResponse.AccessToken,
 	})
 
@@ -462,7 +462,7 @@ func TestAuthMeRejectsExpiredToken(t *testing.T) {
 func TestAuthMeRejectsRevokedSession(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -474,7 +474,7 @@ func TestAuthMeRejectsRevokedSession(t *testing.T) {
 	now := fixture.clock.Now()
 	fixture.sessionRepo.sessions[0].RevokedAt = &now
 
-	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/me", nil, map[string]string{
 		"Authorization": "Bearer " + registerResponse.AccessToken,
 	})
 
@@ -492,7 +492,7 @@ func TestAuthMeRejectsRevokedSession(t *testing.T) {
 func TestAuthMeReturnsCurrentUserWithoutSensitiveFields(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -501,7 +501,7 @@ func TestAuthMeReturnsCurrentUserWithoutSensitiveFields(t *testing.T) {
 	var registerResponse authResponse
 	decodeJSONResponse(t, register, &registerResponse)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/me", nil, map[string]string{
 		"Authorization": "Bearer " + registerResponse.AccessToken,
 	})
 
@@ -532,7 +532,7 @@ func TestAuthMeReturnsCurrentUserWithoutSensitiveFields(t *testing.T) {
 func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user1@example.com",
 		"password":         "StrongPassw0rd1!",
 		"password_confirm": "StrongPassw0rd1!",
@@ -540,14 +540,14 @@ func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
 	var userOneRegisterResponse authResponse
 	decodeJSONResponse(t, userOneRegister, &userOneRegisterResponse)
 
-	userOneLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	userOneLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user1@example.com",
 		"password": "StrongPassw0rd1!",
 	}, nil)
 	var userOneLoginResponse authResponse
 	decodeJSONResponse(t, userOneLogin, &userOneLoginResponse)
 
-	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user2@example.com",
 		"password":         "StrongPassw0rd2!",
 		"password_confirm": "StrongPassw0rd2!",
@@ -555,7 +555,7 @@ func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
 	var userTwoRegisterResponse authResponse
 	decodeJSONResponse(t, userTwoRegister, &userTwoRegisterResponse)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	rec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + userOneLoginResponse.AccessToken,
 	})
 	if rec.Code != http.StatusOK {
@@ -568,7 +568,7 @@ func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
 		t.Fatalf("expected 2 sessions for user1, got %d", len(response.Sessions))
 	}
 
-	userTwoRec := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	userTwoRec := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + userTwoRegisterResponse.AccessToken,
 	})
 	if userTwoRec.Code != http.StatusOK {
@@ -585,7 +585,7 @@ func TestSessionsEndpointReturnsOnlyCurrentUserSessions(t *testing.T) {
 func TestRevokeSessionEndpointDoesNotRevokeForeignSession(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	userOneRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user1@example.com",
 		"password":         "StrongPassw0rd1!",
 		"password_confirm": "StrongPassw0rd1!",
@@ -593,7 +593,7 @@ func TestRevokeSessionEndpointDoesNotRevokeForeignSession(t *testing.T) {
 	var userOneRegisterResponse authResponse
 	decodeJSONResponse(t, userOneRegister, &userOneRegisterResponse)
 
-	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	userTwoRegister := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user2@example.com",
 		"password":         "StrongPassw0rd2!",
 		"password_confirm": "StrongPassw0rd2!",
@@ -601,21 +601,21 @@ func TestRevokeSessionEndpointDoesNotRevokeForeignSession(t *testing.T) {
 	var userTwoRegisterResponse authResponse
 	decodeJSONResponse(t, userTwoRegister, &userTwoRegisterResponse)
 
-	ownerSessions := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	ownerSessions := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + userOneRegisterResponse.AccessToken,
 	})
 	var ownerResponse sessionsResponse
 	decodeJSONResponse(t, ownerSessions, &ownerResponse)
 	targetSessionID := ownerResponse.Sessions[0].ID
 
-	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/"+targetSessionID, nil, map[string]string{
+	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/api/v1/auth/sessions/"+targetSessionID, nil, map[string]string{
 		"Authorization": "Bearer " + userTwoRegisterResponse.AccessToken,
 	})
 	if revoke.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404 for foreign session delete, got %d", revoke.Code)
 	}
 
-	ownerSessionsAfter := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	ownerSessionsAfter := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + userOneRegisterResponse.AccessToken,
 	})
 	var ownerAfterResponse sessionsResponse
@@ -628,7 +628,7 @@ func TestRevokeSessionEndpointDoesNotRevokeForeignSession(t *testing.T) {
 func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -636,14 +636,14 @@ func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 	var registerResponse authResponse
 	decodeJSONResponse(t, register, &registerResponse)
 
-	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
 	var loginResponse authResponse
 	decodeJSONResponse(t, login, &loginResponse)
 
-	before := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	before := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	})
 	var beforeResponse sessionsResponse
@@ -654,14 +654,14 @@ func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 
 	targetSessionID := beforeResponse.Sessions[0].ID
 
-	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/"+targetSessionID, nil, map[string]string{
+	revoke := performJSONRequest(t, fixture.router, http.MethodDelete, "/api/v1/auth/sessions/"+targetSessionID, nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	})
 	if revoke.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", revoke.Code)
 	}
 
-	after := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/sessions", nil, map[string]string{
+	after := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/sessions", nil, map[string]string{
 		"Authorization": "Bearer " + loginResponse.AccessToken,
 	})
 	var afterResponse sessionsResponse
@@ -678,7 +678,7 @@ func TestRevokeSessionEndpointRemovesSessionFromActiveList(t *testing.T) {
 func TestRevokeSessionEndpointRejectsMalformedSessionID(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -686,11 +686,34 @@ func TestRevokeSessionEndpointRejectsMalformedSessionID(t *testing.T) {
 	var registerResponse authResponse
 	decodeJSONResponse(t, register, &registerResponse)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodDelete, "/auth/sessions/not-a-uuid", nil, map[string]string{
+	rec := performJSONRequest(t, fixture.router, http.MethodDelete, "/api/v1/auth/sessions/not-a-uuid", nil, map[string]string{
 		"Authorization": "Bearer " + registerResponse.AccessToken,
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected malformed session id status 400, got %d", rec.Code)
+	}
+}
+
+func TestLegacyRoutesReturnNotFoundAfterBigBangMigration(t *testing.T) {
+	fixture := newAuthEndpointsFixture(t)
+
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/auth/register"},
+		{method: http.MethodGet, path: "/auth/me"},
+		{method: http.MethodGet, path: "/accounts"},
+		{method: http.MethodGet, path: "/categories"},
+		{method: http.MethodGet, path: "/subcategories"},
+		{method: http.MethodGet, path: "/transactions"},
+	}
+
+	for _, tc := range cases {
+		rec := performJSONRequest(t, fixture.router, tc.method, tc.path, nil, nil)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s %s expected 404, got %d", tc.method, tc.path, rec.Code)
+		}
 	}
 }
 
@@ -770,7 +793,25 @@ func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transp
 	}
 
 	handler := transporthttp.NewAuthHandler(authFlowService, postMVPService)
-	router := transporthttp.NewRouterWithOptions(handler, routerOptions)
+	authOnlyHandler := transporthttp.NewAPIHandler(handler, nil)
+	if routerOptions.StrictAPIHandler == nil {
+		routerOptions.StrictAPIHandler = transporthttp.NewStrictAPIHandler(transporthttp.StrictAPIHandlerDeps{
+			Accounts:      authOnlyHandler,
+			Auth:          authOnlyHandler,
+			Categories:    authOnlyHandler,
+			Subcategories: authOnlyHandler,
+			Transactions:  authOnlyHandler,
+		})
+	} else {
+		routerOptions.StrictAPIHandler = transporthttp.NewStrictAPIHandler(transporthttp.StrictAPIHandlerDeps{
+			Accounts:      routerOptions.StrictAPIHandler.(transporthttp.AccountsStrictHandler),
+			Auth:          authOnlyHandler,
+			Categories:    routerOptions.StrictAPIHandler.(transporthttp.CategoriesStrictHandler),
+			Subcategories: routerOptions.StrictAPIHandler.(transporthttp.SubcategoriesStrictHandler),
+			Transactions:  routerOptions.StrictAPIHandler.(transporthttp.TransactionsStrictHandler),
+		})
+	}
+	router := transporthttp.NewRouterWithOptions(routerOptions)
 
 	return authEndpointsFixture{
 		router:              router,
@@ -869,7 +910,7 @@ func assertRefreshCookieAttributes(t *testing.T, cookie *http.Cookie) {
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("expected SameSite=Lax, got %v", cookie.SameSite)
 	}
-	if cookie.Path != "/auth/refresh" {
+	if cookie.Path != "/api/v1/auth/refresh" {
 		t.Fatalf("expected Path=/auth/refresh, got %q", cookie.Path)
 	}
 	if cookie.MaxAge != 2_592_000 {
@@ -889,7 +930,7 @@ func assertClearedRefreshCookie(t *testing.T, cookie *http.Cookie) {
 	if cookie.MaxAge >= 0 {
 		t.Fatalf("expected Max-Age < 0 for clear, got %d", cookie.MaxAge)
 	}
-	if cookie.Path != "/auth/refresh" {
+	if cookie.Path != "/api/v1/auth/refresh" {
 		t.Fatalf("expected Path=/auth/refresh, got %q", cookie.Path)
 	}
 }

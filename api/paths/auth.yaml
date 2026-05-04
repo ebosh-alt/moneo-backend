@@ -1,0 +1,205 @@
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: registerAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthRegisterRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '409': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/login:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: loginAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthLoginRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/refresh:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: refreshAuth
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/logout:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: logoutAuth
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/logout-all:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: logoutAllAuth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/me:
+    get:
+      summary: GET operation
+      tags: [Auth]
+      operationId: meAuth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthMeResponse' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/sessions:
+    get:
+      summary: GET operation
+      tags: [Auth]
+      operationId: sessionsAuth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthSessionsResponse' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/sessions/{sessionId}:
+    parameters:
+      - $ref: '../schemas/components.yaml#/components/parameters/SessionId'
+    delete:
+      summary: DELETE operation
+      tags: [Auth]
+      operationId: revokeSessionAuth
+      responses:
+        '204': { description: No Content }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '404': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/forgot-password:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: forgotPasswordAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthForgotPasswordRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/reset-password:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: resetPasswordAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthResetPasswordRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/send-verification-email:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: sendVerificationEmailAuth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+
+  /api/v1/auth/verify-email:
+    post:
+      summary: POST operation
+      tags: [Auth]
+      operationId: verifyEmailAuth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthVerifyEmailRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/components.yaml#/components/schemas/AuthOKResponse' }
+        '400': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '401': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }
+        '500': { $ref: '../schemas/components.yaml#/components/responses/AuthError' }

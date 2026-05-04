@@ -11,7 +11,7 @@ import (
 func TestForgotPasswordEndpointReturnsOKWithoutEmailDisclosure(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -20,7 +20,7 @@ func TestForgotPasswordEndpointReturnsOKWithoutEmailDisclosure(t *testing.T) {
 		t.Fatalf("expected register status 201, got %d", register.Code)
 	}
 
-	existing := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/forgot-password", map[string]any{
+	existing := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/forgot-password", map[string]any{
 		"email": "user@example.com",
 	}, nil)
 	if existing.Code != http.StatusOK {
@@ -36,7 +36,7 @@ func TestForgotPasswordEndpointReturnsOKWithoutEmailDisclosure(t *testing.T) {
 		t.Fatal("stored password reset token must be hash-only")
 	}
 
-	missing := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/forgot-password", map[string]any{
+	missing := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/forgot-password", map[string]any{
 		"email": "missing@example.com",
 	}, nil)
 	if missing.Code != http.StatusOK {
@@ -50,14 +50,14 @@ func TestForgotPasswordEndpointReturnsOKWithoutEmailDisclosure(t *testing.T) {
 func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
 	}, nil)
 	firstRefreshCookie := findCookie(t, register, transporthttp.RefreshCookieName)
 
-	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
@@ -65,7 +65,7 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 		t.Fatalf("expected login status 200, got %d", login.Code)
 	}
 
-	forgot := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/forgot-password", map[string]any{
+	forgot := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/forgot-password", map[string]any{
 		"email": "user@example.com",
 	}, nil)
 	if forgot.Code != http.StatusOK {
@@ -76,7 +76,7 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 	}
 
 	resetToken := fixture.notificationService.passwordResetTokens[len(fixture.notificationService.passwordResetTokens)-1]
-	reset := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/reset-password", map[string]any{
+	reset := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/reset-password", map[string]any{
 		"token":            resetToken,
 		"password":         "NewStrongPassw0rd!",
 		"password_confirm": "NewStrongPassw0rd!",
@@ -85,12 +85,12 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 		t.Fatalf("expected reset-password status 200, got %d", reset.Code)
 	}
 
-	refreshAfterReset := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", nil, nil, firstRefreshCookie)
+	refreshAfterReset := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", nil, nil, firstRefreshCookie)
 	if refreshAfterReset.Code != http.StatusUnauthorized {
 		t.Fatalf("expected refresh after reset status 401, got %d", refreshAfterReset.Code)
 	}
 
-	oldPasswordLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	oldPasswordLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
@@ -98,7 +98,7 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 		t.Fatalf("expected old password login status 401, got %d", oldPasswordLogin.Code)
 	}
 
-	newPasswordLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	newPasswordLogin := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "NewStrongPassw0rd!",
 	}, nil)
@@ -106,7 +106,7 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 		t.Fatalf("expected new password login status 200, got %d", newPasswordLogin.Code)
 	}
 
-	reuse := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/reset-password", map[string]any{
+	reuse := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/reset-password", map[string]any{
 		"token":            resetToken,
 		"password":         "AnotherStrongPassw0rd!",
 		"password_confirm": "AnotherStrongPassw0rd!",
@@ -125,7 +125,7 @@ func TestResetPasswordEndpointRevokesSessionsAndConsumesToken(t *testing.T) {
 func TestEmailVerificationFlow(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	register := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/register", map[string]any{
+	register := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"email":            "user@example.com",
 		"password":         "StrongPassw0rd!",
 		"password_confirm": "StrongPassw0rd!",
@@ -137,12 +137,12 @@ func TestEmailVerificationFlow(t *testing.T) {
 	var authTokens authResponse
 	decodeJSONResponse(t, register, &authTokens)
 
-	sendMissingToken := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/send-verification-email", nil, nil)
+	sendMissingToken := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/send-verification-email", nil, nil)
 	if sendMissingToken.Code != http.StatusUnauthorized {
 		t.Fatalf("expected send-verification without token status 401, got %d", sendMissingToken.Code)
 	}
 
-	send := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/send-verification-email", nil, map[string]string{
+	send := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/send-verification-email", nil, map[string]string{
 		"Authorization": "Bearer " + authTokens.AccessToken,
 	})
 	if send.Code != http.StatusOK {
@@ -161,14 +161,14 @@ func TestEmailVerificationFlow(t *testing.T) {
 	}
 
 	verifyToken := fixture.notificationService.emailVerificationTokens[len(fixture.notificationService.emailVerificationTokens)-1]
-	verify := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/verify-email", map[string]any{
+	verify := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/verify-email", map[string]any{
 		"token": verifyToken,
 	}, nil)
 	if verify.Code != http.StatusOK {
 		t.Fatalf("expected verify-email status 200, got %d", verify.Code)
 	}
 
-	me := performJSONRequest(t, fixture.router, http.MethodGet, "/auth/me", nil, map[string]string{
+	me := performJSONRequest(t, fixture.router, http.MethodGet, "/api/v1/auth/me", nil, map[string]string{
 		"Authorization": "Bearer " + authTokens.AccessToken,
 	})
 	if me.Code != http.StatusOK {
@@ -181,7 +181,7 @@ func TestEmailVerificationFlow(t *testing.T) {
 		t.Fatalf("expected email_verified=true, got %#v", payload["email_verified"])
 	}
 
-	verifyAgain := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/verify-email", map[string]any{
+	verifyAgain := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/verify-email", map[string]any{
 		"token": verifyToken,
 	}, nil)
 	if verifyAgain.Code != http.StatusUnauthorized {
@@ -198,7 +198,7 @@ func TestEmailVerificationFlow(t *testing.T) {
 func TestForgotPasswordEndpointValidatesInput(t *testing.T) {
 	fixture := newAuthEndpointsFixture(t)
 
-	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/forgot-password", map[string]any{
+	rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/forgot-password", map[string]any{
 		"email": strings.Repeat("x", 400),
 	}, nil)
 	if rec.Code != http.StatusBadRequest {
