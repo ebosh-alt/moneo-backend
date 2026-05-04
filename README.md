@@ -7,8 +7,9 @@
 - `make openapi` — lint + bundle + generate `oapi-codegen` output.
 - `make openapi-generate` — regenerate `internal/transport/http/generated/api.gen.go` from bundled OpenAPI.
 - Generated transport code must be updated only via `make openapi-generate` or `make openapi`.
+- `make openapi-guard` — enforce OpenAPI-first transport rules (no legacy `httptest`/`gin.CreateTestContext`/reflection proxy in production handlers; generated file marker check).
 - `make check` — full local gate in order: `fmt -> vet -> openapi-lint -> openapi-generate -> test -> build`.
-- `make openapi-check` — main drift gate: runs `openapi`, then verifies no generation drift via `git diff --exit-code`.
+- `make openapi-check` — main drift gate: runs `openapi` + `openapi-guard`, then verifies no drift in bundled spec and generated Go via `git diff --exit-code`.
 - `internal/transport/http/generated/api.gen.go` is generated code and must not be edited manually.
 - `docs/openapi-format-compatibility-matrix.md` — migration compatibility rules for field formats (money/date/type/status).
 - `docs/openapi-dual-compatibility-rollout.md` — phased dual-read/dual-write rollout and rollback strategy.

@@ -13,7 +13,7 @@ OPENAPI_GEN_FILE ?= internal/transport/http/generated/api.gen.go
 .PHONY: ops-repair-transactions-dry-run ops-repair-transactions
 .PHONY: ops-verify-transactions-baseline ops-verify-transactions
 .PHONY: fmt vet test build check
-.PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-check
+.PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-guard openapi-check
 
 fmt:
 	go fmt ./...
@@ -43,7 +43,14 @@ openapi-generate: openapi-bundle
 
 openapi: openapi-lint openapi-generate
 
-openapi-check: openapi
+openapi-guard:
+	@test -f $(OPENAPI_GEN_FILE)
+	@rg -n "DO NOT EDIT" $(OPENAPI_GEN_FILE) >/dev/null
+	@! rg -n "httptest\\.NewRecorder\\(" internal/transport/http --glob '!**/*_test.go'
+	@! rg -n "gin\\.CreateTestContext\\(" internal/transport/http --glob '!**/*_test.go'
+	@! rg -n "MethodByName\\(" internal/transport/http --glob '!**/*_test.go'
+
+openapi-check: openapi openapi-guard
 	git diff --exit-code $(OPENAPI_GEN_FILE) $(OPENAPI_BUNDLE)
 
 create-migration:
