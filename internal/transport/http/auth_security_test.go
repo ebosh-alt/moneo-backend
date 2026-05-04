@@ -20,10 +20,10 @@ func TestLoginEndpointRateLimitBlocksBruteForceAttempts(t *testing.T) {
 	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		SecurityMiddleware: transporthttp.NewAuthSecurityMiddleware(transporthttp.AuthSecurityConfig{
 			RateLimits: map[string]transporthttp.AuthRateLimitRule{
-				"/auth/login":           {MaxAttempts: 2, Window: time.Minute},
-				"/auth/register":        {MaxAttempts: 5, Window: time.Minute},
-				"/auth/refresh":         {MaxAttempts: 5, Window: time.Minute},
-				"/auth/forgot-password": {MaxAttempts: 5, Window: time.Minute},
+				"/api/v1/auth/login":           {MaxAttempts: 2, Window: time.Minute},
+				"/api/v1/auth/register":        {MaxAttempts: 5, Window: time.Minute},
+				"/api/v1/auth/refresh":         {MaxAttempts: 5, Window: time.Minute},
+				"/api/v1/auth/forgot-password": {MaxAttempts: 5, Window: time.Minute},
 			},
 			Logger: log.New(&logBuffer, "", 0),
 		}),
@@ -39,7 +39,7 @@ func TestLoginEndpointRateLimitBlocksBruteForceAttempts(t *testing.T) {
 	}
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 			"email":    "user@example.com",
 			"password": "WrongPassw0rd!",
 		}, nil)
@@ -48,7 +48,7 @@ func TestLoginEndpointRateLimitBlocksBruteForceAttempts(t *testing.T) {
 		}
 	}
 
-	blocked := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	blocked := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "WrongPassw0rd!",
 	}, nil)
@@ -74,7 +74,7 @@ func TestLoginEndpointRateLimitIgnoresUntrustedForwardedFor(t *testing.T) {
 	fixture := newAuthEndpointsFixtureWithRouterOptions(t, transporthttp.RouterOptions{
 		SecurityMiddleware: transporthttp.NewAuthSecurityMiddleware(transporthttp.AuthSecurityConfig{
 			RateLimits: map[string]transporthttp.AuthRateLimitRule{
-				"/auth/login": {MaxAttempts: 2, Window: time.Minute},
+				"/api/v1/auth/login": {MaxAttempts: 2, Window: time.Minute},
 			},
 		}),
 	})
@@ -89,7 +89,7 @@ func TestLoginEndpointRateLimitIgnoresUntrustedForwardedFor(t *testing.T) {
 	}
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		rec := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+		rec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 			"email":    "user@example.com",
 			"password": "WrongPassw0rd!",
 		}, map[string]string{
@@ -100,7 +100,7 @@ func TestLoginEndpointRateLimitIgnoresUntrustedForwardedFor(t *testing.T) {
 		}
 	}
 
-	blocked := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	blocked := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "WrongPassw0rd!",
 	}, map[string]string{
@@ -133,7 +133,7 @@ func TestAuthSecurityLogsDoNotContainSensitiveValues(t *testing.T) {
 	rawRefreshToken := "raw-refresh-token-should-not-appear"
 	rawAuthorization := "raw-access-token-should-not-appear"
 
-	login := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	login := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": rawPassword,
 	}, map[string]string{
@@ -143,7 +143,7 @@ func TestAuthSecurityLogsDoNotContainSensitiveValues(t *testing.T) {
 		t.Fatalf("expected login status 401, got %d", login.Code)
 	}
 
-	refresh := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/refresh", map[string]any{
+	refresh := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/refresh", map[string]any{
 		"refresh_token": rawRefreshToken,
 	}, map[string]string{
 		"Authorization": "Bearer " + rawAuthorization,
@@ -183,7 +183,7 @@ func TestAuthSecurityRequiresHTTPSInProduction(t *testing.T) {
 		t.Fatalf("register fixture user: %v", err)
 	}
 
-	insecure := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	insecure := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, nil)
@@ -197,7 +197,7 @@ func TestAuthSecurityRequiresHTTPSInProduction(t *testing.T) {
 		t.Fatalf("expected https_required error, got %q", insecureResponse.Error)
 	}
 
-	forgedForwarded := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	forgedForwarded := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, map[string]string{
@@ -226,7 +226,7 @@ func TestAuthSecurityAllowsTrustedForwardedProto(t *testing.T) {
 		t.Fatalf("register fixture user: %v", err)
 	}
 
-	secure := performJSONRequest(t, fixture.router, http.MethodPost, "/auth/login", map[string]any{
+	secure := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/auth/login", map[string]any{
 		"email":    "user@example.com",
 		"password": "StrongPassw0rd!",
 	}, map[string]string{

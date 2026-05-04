@@ -20,7 +20,7 @@ import (
 
 const (
 	RefreshCookieName          = "refresh_token"
-	refreshCookiePath          = "/auth/refresh"
+	refreshCookiePath          = "/api/v1/auth/refresh"
 	refreshCookieMaxAgeSeconds = 2_592_000
 	maxAuthJSONBodyBytes       = 8 * 1024
 	maxEmailLength             = 320

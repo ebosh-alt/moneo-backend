@@ -17,6 +17,17 @@ const (
 	authSessionContextKey = "auth.session"
 )
 
+var publicAccessTokenOptionalPaths = map[string]struct{}{
+	"/api/v1/auth/register":        {},
+	"/api/v1/auth/login":           {},
+	"/api/v1/auth/refresh":         {},
+	"/api/v1/auth/logout":          {},
+	"/api/v1/auth/logout-all":      {},
+	"/api/v1/auth/forgot-password": {},
+	"/api/v1/auth/reset-password":  {},
+	"/api/v1/auth/verify-email":    {},
+}
+
 type AccessAuthenticator interface {
 	Authenticate(ctx context.Context, accessToken string) (domainidentity.User, domainidentity.Session, error)
 }
@@ -25,6 +36,11 @@ func NewAuthMiddleware(authenticator AccessAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if authenticator == nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
+			return
+		}
+
+		if _, ok := publicAccessTokenOptionalPaths[c.Request.URL.Path]; ok {
+			c.Next()
 			return
 		}
 

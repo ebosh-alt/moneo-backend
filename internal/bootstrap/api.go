@@ -181,9 +181,17 @@ func NewAPI(cfg Config) (*API, error) {
 		TransactionsBulkCreate:      transactionBulkCreateService,
 		TransactionsBulkPatch:       transactionBulkPatchService,
 	})
-	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
-		AuthMiddleware: authMiddleware,
-		CatalogHandler: catalogHandler,
+	legacyStrictHandler := transporthttp.NewAPIHandler(authHandler, catalogHandler)
+	apiHandler := transporthttp.NewStrictAPIHandler(transporthttp.StrictAPIHandlerDeps{
+		Accounts:      legacyStrictHandler,
+		Auth:          legacyStrictHandler,
+		Categories:    legacyStrictHandler,
+		Subcategories: legacyStrictHandler,
+		Transactions:  legacyStrictHandler,
+	})
+	router := transporthttp.NewRouterWithOptions(transporthttp.RouterOptions{
+		AuthMiddleware:   authMiddleware,
+		StrictAPIHandler: apiHandler,
 	})
 
 	server := &http.Server{
