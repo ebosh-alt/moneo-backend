@@ -34,15 +34,39 @@ func WithAuthStrictHandler(
 	strict generated.StrictServerInterface,
 ) generated.StrictServerInterface {
 	if strict == nil {
-		return NewAPIHandler(auth, nil)
+		authLegacy := NewAPIHandler(auth, nil)
+		return NewStrictAPIHandler(StrictAPIHandlerDeps{
+			Accounts:      authLegacy,
+			Auth:          authLegacy,
+			Categories:    authLegacy,
+			Subcategories: authLegacy,
+			Transactions:  authLegacy,
+		})
+	}
+
+	if strictHandler, ok := strict.(*StrictAPIHandler); ok {
+		authLegacy := NewAPIHandler(auth, nil)
+		return NewStrictAPIHandler(StrictAPIHandlerDeps{
+			Accounts:      strictHandler.AccountsStrictHandler,
+			Auth:          authLegacy,
+			Categories:    strictHandler.CategoriesStrictHandler,
+			Subcategories: strictHandler.SubcategoriesStrictHandler,
+			Transactions:  strictHandler.TransactionsStrictHandler,
+		})
 	}
 
 	apiHandler, ok := strict.(*APIHandler)
 	if !ok {
 		return strict
 	}
-
-	return NewAPIHandler(auth, apiHandler.catalog)
+	legacy := NewAPIHandler(auth, apiHandler.catalog)
+	return NewStrictAPIHandler(StrictAPIHandlerDeps{
+		Accounts:      legacy,
+		Auth:          legacy,
+		Categories:    legacy,
+		Subcategories: legacy,
+		Transactions:  legacy,
+	})
 }
 
 func (h *APIHandler) invokeHandler(
@@ -204,13 +228,6 @@ func toSparseJSONValue(value reflect.Value) (any, bool) {
 		return value.Interface(), true
 	}
 }
-
-
-
-
-
-
-
 
 func (h *APIHandler) ListAccounts(ctx context.Context, request generated.ListAccountsRequestObject) (generated.ListAccountsResponseObject, error) {
 	decode := func(status int, payload []byte) (any, error) {
@@ -2587,24 +2604,3 @@ func (h *APIHandler) VerifyEmailAuth(ctx context.Context, request generated.Veri
 	}
 	return typed, nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
