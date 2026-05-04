@@ -9,9 +9,12 @@ import (
 	"io"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 
+	appaccounting "moneo/internal/app/accounting"
 	appidentity "moneo/internal/app/identity"
+	domainaccounting "moneo/internal/domain/accounting"
 	domainidentity "moneo/internal/domain/identity"
 	"moneo/internal/domain/shared"
 	generated "moneo/internal/transport/http/generated"
@@ -234,401 +237,544 @@ func toSparseJSONValue(value reflect.Value) (any, bool) {
 }
 
 func (h *APIHandler) ListAccounts(ctx context.Context, request generated.ListAccountsRequestObject) (generated.ListAccountsResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListAccounts200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListAccounts400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListAccounts401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListAccounts500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.accountsList == nil {
+		return generated.ListAccounts500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListAccounts", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListAccountsResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListAccounts", result)
+		return generated.ListAccounts401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	limit, offset, details := strictParseLimitOffset(request.Params.Limit, request.Params.Offset)
+	if len(details) > 0 {
+		return generated.ListAccounts400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	includeArchived := false
+	if request.Params.IncludeArchived != nil {
+		includeArchived = bool(*request.Params.IncludeArchived)
+	}
+
+	var accountType *domainaccounting.AccountType
+	if request.Params.Type != nil {
+		parsedType, err := domainaccounting.ParseAccountType(strings.TrimSpace(*request.Params.Type))
+		if err != nil {
+			return generated.ListAccounts400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation,
+					"Validation failed",
+					catalogFieldError{Field: "type", Message: "type must be one of: cash, debit_card, savings, brokerage, credit_card, deposit, debt, other"},
+				)),
+			}, nil
+		}
+		accountType = &parsedType
+	}
+
+	var currency *shared.Currency
+	if request.Params.Currency != nil {
+		parsedCurrency, err := shared.ParseCurrency(strings.TrimSpace(*request.Params.Currency))
+		if err != nil {
+			return generated.ListAccounts400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation,
+					"Validation failed",
+					catalogFieldError{Field: "currency", Message: "currency must be one of: RUB, USD, EUR"},
+				)),
+			}, nil
+		}
+		currency = &parsedCurrency
+	}
+
+	sortMode := appaccounting.AccountsSortCreatedAtDesc
+	if request.Params.Sort != nil {
+		candidate := appaccounting.AccountsSort(*request.Params.Sort)
+		if !slices.Contains([]appaccounting.AccountsSort{
+			appaccounting.AccountsSortCreatedAtDesc,
+			appaccounting.AccountsSortNameAsc,
+			appaccounting.AccountsSortBalanceDesc,
+		}, candidate) {
+			return generated.ListAccounts400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation,
+					"Validation failed",
+					catalogFieldError{Field: "sort", Message: "sort must be one of: createdAt:desc, name:asc, balance:desc"},
+				)),
+			}, nil
+		}
+		sortMode = candidate
+	}
+
+	accounts, err := h.catalog.accountsList.ListByUser(ctx, appaccounting.ListAccountsInput{
+		UserID:          userID,
+		IncludeArchived: includeArchived,
+		Type:            accountType,
+		Currency:        currency,
+		Sort:            sortMode,
+	})
+	if err != nil {
+		return generated.ListAccounts500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	items := make([]generated.Account, 0, len(accounts))
+	for _, account := range accounts {
+		mapped, mapErr := toGeneratedAccount(account)
+		if mapErr != nil {
+			return generated.ListAccounts500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		items = append(items, mapped)
+	}
+
+	pagedItems, total := paginate(items, limit, offset)
+	return generated.ListAccounts200JSONResponse{
+		Items: pagedItems,
+		Pagination: generated.Pagination{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}, nil
 }
 
 func (h *APIHandler) CreateAccount(ctx context.Context, request generated.CreateAccountRequestObject) (generated.CreateAccountResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateAccount201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateAccount400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateAccount401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateAccount409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateAccount422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateAccount500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.accountsCreate == nil {
+		return generated.CreateAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.CreateAccount401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.CreateAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	createReq := createAccountRequest{}
+	if request.Body.Name != nil {
+		createReq.Name = *request.Body.Name
+	}
+	if request.Body.Type != nil {
+		createReq.Type = *request.Body.Type
+	}
+	if request.Body.Currency != nil {
+		createReq.Currency = *request.Body.Currency
+	}
+	if request.Body.InitialBalance != nil {
+		initial := DecimalString(*request.Body.InitialBalance)
+		createReq.InitialBalance = &initial
+	}
+	createReq.IncludeInNetWorth = request.Body.IncludeInNetWorth
+	createReq.IncludeInDailyBudget = request.Body.IncludeInDailyBudget
+
+	input, details := validateCreateAccountRequest(userID, createReq)
+	if len(details) > 0 {
+		return generated.CreateAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	account, err := h.catalog.accountsCreate.Create(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
+			return generated.CreateAccount409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Conflict", catalogFieldError{Field: "name", Message: "account with this name already exists"},
+				)),
+			}, nil
+		case errors.Is(err, appaccounting.ErrNegativeInitialBalance):
+			return generated.CreateAccount400JSONResponse{
+				ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorValidation, "Validation failed", catalogFieldError{Field: "initialBalance", Message: "initialBalance must be greater than or equal to 0"},
+				)),
+			}, nil
+		case errors.Is(err, domainaccounting.ErrInvalidAccountName),
+			errors.Is(err, domainaccounting.ErrInvalidAccountType),
+			errors.Is(err, domainaccounting.ErrAccountCurrencyMismatch):
+			return generated.CreateAccount422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation")),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.CreateAccount500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateAccount", decode)
-	if err != nil {
-		return nil, err
+
+	mapped, mapErr := toGeneratedAccount(account)
+	if mapErr != nil {
+		return generated.CreateAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	typed, ok := result.(generated.CreateAccountResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateAccount", result)
-	}
-	return typed, nil
+	return generated.CreateAccount201JSONResponse(mapped), nil
 }
 
 func (h *APIHandler) GetAccountsSummary(ctx context.Context, request generated.GetAccountsSummaryRequestObject) (generated.GetAccountsSummaryResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetAccountsSummary200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetAccountsSummary400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetAccountsSummary401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetAccountsSummary500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.accountsSummary == nil {
+		return generated.GetAccountsSummary500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetAccountsSummary", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetAccountsSummaryResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetAccountsSummary", result)
+		return generated.GetAccountsSummary401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	currency, err := shared.ParseCurrency(strings.TrimSpace(request.Params.Currency))
+	if err != nil {
+		return generated.GetAccountsSummary400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation,
+				"Validation failed",
+				catalogFieldError{Field: "currency", Message: "currency must be one of: RUB, USD, EUR"},
+			)),
+		}, nil
+	}
+
+	summary, err := h.catalog.accountsSummary.GetByUserAndCurrency(ctx, appaccounting.GetAccountsSummaryInput{
+		UserID:   userID,
+		Currency: currency,
+	})
+	if err != nil {
+		return generated.GetAccountsSummary500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	mapped, mapErr := toGeneratedAccountSummary(summary)
+	if mapErr != nil {
+		return generated.GetAccountsSummary500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.GetAccountsSummary200JSONResponse(mapped), nil
 }
 
 func (h *APIHandler) GetAccount(ctx context.Context, request generated.GetAccountRequestObject) (generated.GetAccountResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetAccount200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetAccount400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetAccount401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetAccount404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetAccount500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.accountsGet == nil {
+		return generated.GetAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetAccountResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetAccount", result)
+		return generated.GetAccount401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	accountID := strings.TrimSpace(string(request.AccountId))
+	if accountID == "" {
+		return generated.GetAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "accountId", Message: "accountId is required"},
+			)),
+		}, nil
+	}
+
+	account, err := h.catalog.accountsGet.GetByID(ctx, userID, shared.AccountID(accountID))
+	if err != nil {
+		if errors.Is(err, appaccounting.ErrAccountNotFound) {
+			return generated.GetAccount404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.GetAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	mapped, mapErr := toGeneratedAccount(account)
+	if mapErr != nil {
+		return generated.GetAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.GetAccount200JSONResponse(mapped), nil
 }
 
 func (h *APIHandler) PatchAccount(ctx context.Context, request generated.PatchAccountRequestObject) (generated.PatchAccountResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchAccount200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchAccount400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchAccount401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchAccount404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchAccount409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchAccount500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.accountsUpdate == nil {
+		return generated.PatchAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.PatchAccount401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	accountID := strings.TrimSpace(string(request.AccountId))
+	if accountID == "" {
+		return generated.PatchAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "accountId", Message: "accountId is required"},
+			)),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.PatchAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	patchReq := patchAccountRequest{
+		Name:                 request.Body.Name,
+		Type:                 request.Body.Type,
+		IncludeInNetWorth:    request.Body.IncludeInNetWorth,
+		IncludeInDailyBudget: request.Body.IncludeInDailyBudget,
+		Currency:             request.Body.Currency,
+	}
+	if request.Body.InitialBalance != nil {
+		initial := DecimalString(*request.Body.InitialBalance)
+		patchReq.InitialBalance = &initial
+	}
+	if request.Body.Balance != nil {
+		balance := DecimalString(*request.Body.Balance)
+		patchReq.Balance = &balance
+	}
+
+	input, details := validatePatchAccountRequest(userID, shared.AccountID(accountID), patchReq)
+	if len(details) > 0 {
+		return generated.PatchAccount400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	account, err := h.catalog.accountsUpdate.Update(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, appaccounting.ErrAccountNotFound):
+			return generated.PatchAccount404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
+			return generated.PatchAccount409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Conflict", catalogFieldError{Field: "name", Message: "account with this name already exists"},
+				)),
+			}, nil
+		case errors.Is(err, appaccounting.ErrConcurrentAccountUpdate):
+			return generated.PatchAccount409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Conflict", catalogFieldError{Field: "body", Message: "account was modified concurrently, retry with fresh state"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.PatchAccount500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchAccount", decode)
-	if err != nil {
-		return nil, err
+
+	mapped, mapErr := toGeneratedAccount(account)
+	if mapErr != nil {
+		return generated.PatchAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	typed, ok := result.(generated.PatchAccountResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchAccount", result)
-	}
-	return typed, nil
+	return generated.PatchAccount200JSONResponse(mapped), nil
 }
 
 func (h *APIHandler) ArchiveAccount(ctx context.Context, request generated.ArchiveAccountRequestObject) (generated.ArchiveAccountResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ArchiveAccount200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ArchiveAccount401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.ArchiveAccount404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ArchiveAccount500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.accountsArchive == nil {
+		return generated.ArchiveAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ArchiveAccount", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ArchiveAccountResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ArchiveAccount", result)
+		return generated.ArchiveAccount401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	accountID := strings.TrimSpace(string(request.AccountId))
+	if accountID == "" {
+		return generated.ArchiveAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	account, err := h.catalog.accountsArchive.Archive(ctx, userID, shared.AccountID(accountID))
+	if err != nil {
+		if errors.Is(err, appaccounting.ErrAccountNotFound) {
+			return generated.ArchiveAccount404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.ArchiveAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	mapped, mapErr := toGeneratedAccount(account)
+	if mapErr != nil {
+		return generated.ArchiveAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.ArchiveAccount200JSONResponse(mapped), nil
 }
 
 func (h *APIHandler) RestoreAccount(ctx context.Context, request generated.RestoreAccountRequestObject) (generated.RestoreAccountResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.RestoreAccount200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.RestoreAccount401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.RestoreAccount404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.RestoreAccount409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.RestoreAccount500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
+	if h == nil || h.catalog == nil || h.catalog.accountsRestore == nil {
+		return generated.RestoreAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.RestoreAccount401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+
+	accountID := strings.TrimSpace(string(request.AccountId))
+	if accountID == "" {
+		return generated.RestoreAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	account, err := h.catalog.accountsRestore.Restore(ctx, userID, shared.AccountID(accountID))
+	if err != nil {
+		switch {
+		case errors.Is(err, appaccounting.ErrAccountNotFound):
+			return generated.RestoreAccount404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
+			return generated.RestoreAccount409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Account with this name already exists", catalogFieldError{Field: "name", Message: "account name must be unique per user"},
+				)),
+			}, nil
 		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+			return generated.RestoreAccount500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "RestoreAccount", decode)
+
+	mapped, mapErr := toGeneratedAccount(account)
+	if mapErr != nil {
+		return generated.RestoreAccount500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.RestoreAccount200JSONResponse(mapped), nil
+}
+
+func strictParseLimitOffset(limitRaw *generated.Limit, offsetRaw *generated.Offset) (limit int, offset int, details []catalogFieldError) {
+	limit = defaultPageLimit
+	offset = 0
+	if limitRaw != nil {
+		limit = int(*limitRaw)
+		if limit <= 0 {
+			details = append(details, catalogFieldError{Field: "limit", Message: "limit must be a positive integer"})
+		}
+	}
+	if offsetRaw != nil {
+		offset = int(*offsetRaw)
+		if offset < 0 {
+			details = append(details, catalogFieldError{Field: "offset", Message: "offset must be a non-negative integer"})
+		}
+	}
+	if limit > maxPageLimit {
+		limit = maxPageLimit
+	}
+	return limit, offset, details
+}
+
+func accountErrorEnvelope(code catalogErrorCode, message string, details ...catalogFieldError) generated.ErrorEnvelope {
+	errorDetails := make([]generated.ErrorDetail, 0, len(details))
+	for _, detail := range details {
+		errorDetails = append(errorDetails, generated.ErrorDetail{
+			Field:   detail.Field,
+			Message: detail.Message,
+		})
+	}
+
+	errorBody := generated.ErrorBody{
+		Code:    generated.ErrorBodyCode(code),
+		Message: message,
+	}
+	if len(errorDetails) > 0 {
+		errorBody.Details = &errorDetails
+	}
+	return generated.ErrorEnvelope{Error: errorBody}
+}
+
+func toGeneratedAccount(account domainaccounting.Account) (generated.Account, error) {
+	response, err := toAccountResponse(account)
 	if err != nil {
-		return nil, err
+		return generated.Account{}, err
 	}
-	typed, ok := result.(generated.RestoreAccountResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for RestoreAccount", result)
+	return generated.Account{
+		Id:                   response.ID,
+		Name:                 response.Name,
+		Type:                 response.Type,
+		Currency:             response.Currency,
+		Balance:              response.Balance,
+		InitialBalance:       response.InitialBalance,
+		IncludeInNetWorth:    response.IncludeInNetWorth,
+		IncludeInDailyBudget: response.IncludeInDailyBudget,
+		IsArchived:           response.IsArchived,
+		ArchivedAt:           response.ArchivedAt,
+		CreatedAt:            response.CreatedAt,
+		UpdatedAt:            response.UpdatedAt,
+	}, nil
+}
+
+func toGeneratedAccountSummary(summary appaccounting.AccountSummary) (generated.AccountSummary, error) {
+	response, err := toAccountSummaryResponse(summary)
+	if err != nil {
+		return generated.AccountSummary{}, err
 	}
-	return typed, nil
+	accounts := make([]generated.AccountSummaryAccount, 0, len(response.Accounts))
+	for _, account := range response.Accounts {
+		accounts = append(accounts, generated.AccountSummaryAccount{
+			Id:                   account.ID,
+			Name:                 account.Name,
+			Type:                 account.Type,
+			Currency:             account.Currency,
+			Balance:              account.Balance,
+			IncludeInNetWorth:    account.IncludeInNetWorth,
+			IncludeInDailyBudget: account.IncludeInDailyBudget,
+		})
+	}
+	return generated.AccountSummary{
+		Currency:                response.Currency,
+		NetWorth:                response.NetWorth,
+		CashBalance:             response.CashBalance,
+		AvailableForDailyBudget: response.AvailableForDailyBudget,
+		CreditLiabilities:       response.CreditLiabilities,
+		Accounts:                accounts,
+	}, nil
 }
 
 func (h *APIHandler) ListCategories(ctx context.Context, request generated.ListCategoriesRequestObject) (generated.ListCategoriesResponseObject, error) {
