@@ -102,4 +102,3 @@ func TestTransactionsStrictGetEndpointsListFiltersAndGetByID(t *testing.T) {
 		t.Fatalf("expected occurredAt 2026-04-12, got %v", getPayload["occurredAt"])
 	}
 }
-

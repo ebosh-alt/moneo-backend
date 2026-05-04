@@ -1,4 +1,5 @@
 package: generated
+output: internal/transport/http/generated/api.gen.go
 
 generate:
   models: true

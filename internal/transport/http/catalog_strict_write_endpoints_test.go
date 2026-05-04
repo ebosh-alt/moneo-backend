@@ -233,4 +233,3 @@ func TestCatalogStrictWriteCategoryAndSubcategoryFlow(t *testing.T) {
 		t.Fatal("expected subcategory active after restore")
 	}
 }
-

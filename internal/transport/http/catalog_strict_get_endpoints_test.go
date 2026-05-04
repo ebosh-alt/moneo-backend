@@ -141,4 +141,3 @@ func TestCatalogStrictGetEndpointsRequireAuth(t *testing.T) {
 		t.Fatalf("expected status 401 without auth, got %d", rec.Code)
 	}
 }
-

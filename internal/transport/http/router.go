@@ -70,6 +70,7 @@ func registerStrictHandlers(routes gin.IRouter, handler generated.StrictServerIn
 		},
 	}))
 	routes.Use(recoverEmptyBadRequestBody())
+	routes.Use(captureRawRequestBody())
 
 	strict := generated.NewStrictHandler(handler, nil)
 	generated.RegisterHandlersWithOptions(routes, strict, generated.GinServerOptions{

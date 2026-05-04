@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +19,16 @@ import (
 	"moneo/internal/domain/shared"
 	domaintransactions "moneo/internal/domain/transactions"
 	generated "moneo/internal/transport/http/generated"
+
+	"github.com/gin-gonic/gin"
 )
 
 type APIHandler struct {
 	auth    *AuthHandler
 	catalog *CatalogHandler
 }
+
+var _ generated.StrictServerInterface = (*APIHandler)(nil)
 
 func NewAPIHandler(auth *AuthHandler, catalog *CatalogHandler) *APIHandler {
 	return &APIHandler{
@@ -105,7 +111,7 @@ func (h *APIHandler) ListAccounts(ctx context.Context, request generated.ListAcc
 		sortMode = candidate
 	}
 
-	accounts, err := h.catalog.accountsList.ListByUser(ctx, appaccounting.ListAccountsInput{
+	accounts, err := h.catalog.accountsList.ListByUser(strictAppContext(ctx), appaccounting.ListAccountsInput{
 		UserID:          userID,
 		IncludeArchived: includeArchived,
 		Type:            accountType,
@@ -184,7 +190,7 @@ func (h *APIHandler) CreateAccount(ctx context.Context, request generated.Create
 		}, nil
 	}
 
-	account, err := h.catalog.accountsCreate.Create(ctx, input)
+	account, err := h.catalog.accountsCreate.Create(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appaccounting.ErrAccountNameAlreadyExists):
@@ -245,7 +251,7 @@ func (h *APIHandler) GetAccountsSummary(ctx context.Context, request generated.G
 		}, nil
 	}
 
-	summary, err := h.catalog.accountsSummary.GetByUserAndCurrency(ctx, appaccounting.GetAccountsSummaryInput{
+	summary, err := h.catalog.accountsSummary.GetByUserAndCurrency(strictAppContext(ctx), appaccounting.GetAccountsSummaryInput{
 		UserID:   userID,
 		Currency: currency,
 	})
@@ -286,7 +292,7 @@ func (h *APIHandler) GetAccount(ctx context.Context, request generated.GetAccoun
 		}, nil
 	}
 
-	account, err := h.catalog.accountsGet.GetByID(ctx, userID, shared.AccountID(accountID))
+	account, err := h.catalog.accountsGet.GetByID(strictAppContext(ctx), userID, shared.AccountID(accountID))
 	if err != nil {
 		if errors.Is(err, appaccounting.ErrAccountNotFound) {
 			return generated.GetAccount404JSONResponse{
@@ -359,7 +365,7 @@ func (h *APIHandler) PatchAccount(ctx context.Context, request generated.PatchAc
 		}, nil
 	}
 
-	account, err := h.catalog.accountsUpdate.Update(ctx, input)
+	account, err := h.catalog.accountsUpdate.Update(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appaccounting.ErrAccountNotFound):
@@ -414,7 +420,7 @@ func (h *APIHandler) ArchiveAccount(ctx context.Context, request generated.Archi
 		}, nil
 	}
 
-	account, err := h.catalog.accountsArchive.Archive(ctx, userID, shared.AccountID(accountID))
+	account, err := h.catalog.accountsArchive.Archive(strictAppContext(ctx), userID, shared.AccountID(accountID))
 	if err != nil {
 		if errors.Is(err, appaccounting.ErrAccountNotFound) {
 			return generated.ArchiveAccount404JSONResponse{
@@ -455,7 +461,7 @@ func (h *APIHandler) RestoreAccount(ctx context.Context, request generated.Resto
 		}, nil
 	}
 
-	account, err := h.catalog.accountsRestore.Restore(ctx, userID, shared.AccountID(accountID))
+	account, err := h.catalog.accountsRestore.Restore(strictAppContext(ctx), userID, shared.AccountID(accountID))
 	if err != nil {
 		switch {
 		case errors.Is(err, appaccounting.ErrAccountNotFound):
@@ -633,7 +639,7 @@ func (h *APIHandler) ListCategories(ctx context.Context, request generated.ListC
 		sortMode = candidate
 	}
 
-	categories, err := h.catalog.categoriesList.ListByUser(ctx, appcatalog.ListCategoriesInput{
+	categories, err := h.catalog.categoriesList.ListByUser(strictAppContext(ctx), appcatalog.ListCategoriesInput{
 		UserID:          userID,
 		IncludeArchived: includeArchived,
 		Type:            categoryType,
@@ -732,7 +738,7 @@ func (h *APIHandler) CreateCategory(ctx context.Context, request generated.Creat
 		}, nil
 	}
 
-	category, err := h.catalog.categoriesCreate.Create(ctx, input)
+	category, err := h.catalog.categoriesCreate.Create(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrCategoryNameAlreadyExists):
@@ -779,7 +785,7 @@ func (h *APIHandler) DeleteCategory(ctx context.Context, request generated.Delet
 		}, nil
 	}
 
-	category, err := h.catalog.categoriesArchive.Archive(ctx, userID, shared.CategoryID(categoryID))
+	category, err := h.catalog.categoriesArchive.Archive(strictAppContext(ctx), userID, shared.CategoryID(categoryID))
 	if err != nil {
 		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
 			return generated.DeleteCategory404JSONResponse{
@@ -820,7 +826,7 @@ func (h *APIHandler) GetCategory(ctx context.Context, request generated.GetCateg
 		includeSubcategories = bool(*request.Params.IncludeSubcategories)
 	}
 
-	category, err := h.catalog.categoriesGet.GetByID(ctx, userID, shared.CategoryID(categoryID))
+	category, err := h.catalog.categoriesGet.GetByID(strictAppContext(ctx), userID, shared.CategoryID(categoryID))
 	if err != nil {
 		if errors.Is(err, appcatalog.ErrCategoryNotFound) {
 			return generated.GetCategory404JSONResponse{
@@ -839,7 +845,7 @@ func (h *APIHandler) GetCategory(ctx context.Context, request generated.GetCateg
 				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
 			}, nil
 		}
-		listed, subErr := h.catalog.subcategoriesListByCategory.List(ctx, appcatalog.ListSubcategoriesByCategoryInput{
+		listed, subErr := h.catalog.subcategoriesListByCategory.List(strictAppContext(ctx), appcatalog.ListSubcategoriesByCategoryInput{
 			UserID:          userID,
 			CategoryID:      category.ID(),
 			IncludeArchived: false,
@@ -897,7 +903,7 @@ func (h *APIHandler) PatchCategory(ctx context.Context, request generated.PatchC
 		}, nil
 	}
 
-	category, err := h.catalog.categoriesUpdate.Update(ctx, input)
+	category, err := h.catalog.categoriesUpdate.Update(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrCategoryNotFound):
@@ -954,7 +960,7 @@ func (h *APIHandler) RestoreCategory(ctx context.Context, request generated.Rest
 		}, nil
 	}
 
-	category, err := h.catalog.categoriesRestore.Restore(ctx, userID, shared.CategoryID(categoryID))
+	category, err := h.catalog.categoriesRestore.Restore(strictAppContext(ctx), userID, shared.CategoryID(categoryID))
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrCategoryNotFound):
@@ -1010,7 +1016,7 @@ func (h *APIHandler) ListCategorySubcategories(ctx context.Context, request gene
 		includeArchived = bool(*request.Params.IncludeArchived)
 	}
 
-	subcategories, err := h.catalog.subcategoriesListByCategory.List(ctx, appcatalog.ListSubcategoriesByCategoryInput{
+	subcategories, err := h.catalog.subcategoriesListByCategory.List(strictAppContext(ctx), appcatalog.ListSubcategoriesByCategoryInput{
 		UserID:          userID,
 		CategoryID:      shared.CategoryID(categoryID),
 		IncludeArchived: includeArchived,
@@ -1082,7 +1088,7 @@ func (h *APIHandler) CreateSubcategory(ctx context.Context, request generated.Cr
 		}, nil
 	}
 
-	subcategory, err := h.catalog.subcategoriesCreate.Create(ctx, input)
+	subcategory, err := h.catalog.subcategoriesCreate.Create(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrCategoryNotFound):
@@ -1137,7 +1143,7 @@ func (h *APIHandler) ListSubcategories(ctx context.Context, request generated.Li
 		}, nil
 	}
 
-	subcategories, err := h.catalog.subcategoriesList.ListByUserID(ctx, userID)
+	subcategories, err := h.catalog.subcategoriesList.ListByUserID(strictAppContext(ctx), userID)
 	if err != nil {
 		return generated.ListSubcategories500JSONResponse{
 			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
@@ -1180,7 +1186,7 @@ func (h *APIHandler) DeleteSubcategory(ctx context.Context, request generated.De
 		}, nil
 	}
 
-	subcategory, err := h.catalog.subcategoriesArchive.Archive(ctx, userID, shared.SubcategoryID(subcategoryID))
+	subcategory, err := h.catalog.subcategoriesArchive.Archive(strictAppContext(ctx), userID, shared.SubcategoryID(subcategoryID))
 	if err != nil {
 		if errors.Is(err, appcatalog.ErrSubcategoryNotFound) {
 			return generated.DeleteSubcategory404JSONResponse{
@@ -1216,7 +1222,7 @@ func (h *APIHandler) GetSubcategory(ctx context.Context, request generated.GetSu
 		}, nil
 	}
 
-	subcategory, err := h.catalog.subcategoriesGet.GetByID(ctx, userID, shared.SubcategoryID(subcategoryID))
+	subcategory, err := h.catalog.subcategoriesGet.GetByID(strictAppContext(ctx), userID, shared.SubcategoryID(subcategoryID))
 	if err != nil {
 		if errors.Is(err, appcatalog.ErrSubcategoryNotFound) {
 			return generated.GetSubcategory404JSONResponse{
@@ -1270,7 +1276,7 @@ func (h *APIHandler) PatchSubcategory(ctx context.Context, request generated.Pat
 		}, nil
 	}
 
-	subcategory, err := h.catalog.subcategoriesUpdate.Update(ctx, input)
+	subcategory, err := h.catalog.subcategoriesUpdate.Update(strictAppContext(ctx), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
@@ -1325,7 +1331,7 @@ func (h *APIHandler) RestoreSubcategory(ctx context.Context, request generated.R
 		}, nil
 	}
 
-	subcategory, err := h.catalog.subcategoriesRestore.Restore(ctx, userID, shared.SubcategoryID(subcategoryID))
+	subcategory, err := h.catalog.subcategoriesRestore.Restore(strictAppContext(ctx), userID, shared.SubcategoryID(subcategoryID))
 	if err != nil {
 		switch {
 		case errors.Is(err, appcatalog.ErrSubcategoryNotFound):
@@ -1414,13 +1420,13 @@ func (h *APIHandler) ListTransactions(ctx context.Context, request generated.Lis
 	query.Limit = limit
 	query.Offset = offset
 
-	transactions, err := h.catalog.transactionsList.ListByUser(ctx, query)
+	transactions, err := h.catalog.transactionsList.ListByUser(strictAppContext(ctx), query)
 	if err != nil {
 		return generated.ListTransactions500JSONResponse{
 			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
 		}, nil
 	}
-	total, err := h.catalog.transactionsList.CountByUser(ctx, query)
+	total, err := h.catalog.transactionsList.CountByUser(strictAppContext(ctx), query)
 	if err != nil {
 		return generated.ListTransactions500JSONResponse{
 			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
@@ -1495,7 +1501,7 @@ func (h *APIHandler) CreateTransaction(ctx context.Context, request generated.Cr
 		}, nil
 	}
 
-	transaction, err := h.catalog.transactionsCreate.Create(ctx, input)
+	transaction, err := h.catalog.transactionsCreate.Create(strictAppContext(ctx), input)
 	if err != nil {
 		return mapTransactionAppErrorToCreate(err), nil
 	}
@@ -1519,6 +1525,11 @@ func (h *APIHandler) PatchTransactionsBulk(ctx context.Context, request generate
 	if !ok {
 		return generated.PatchTransactionsBulk401JSONResponse{
 			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	if details := strictDetectBulkPatchNullFields(ctx); len(details) > 0 {
+		return generated.PatchTransactionsBulk400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
 		}, nil
 	}
 	req := patchTransactionsBulkRequest{}
@@ -1555,7 +1566,7 @@ func (h *APIHandler) PatchTransactionsBulk(ctx context.Context, request generate
 		}, nil
 	}
 
-	transactions, err := h.catalog.transactionsBulkPatch.PatchBulk(ctx, input)
+	transactions, err := h.catalog.transactionsBulkPatch.PatchBulk(strictAppContext(ctx), input)
 	if err != nil {
 		return mapTransactionBulkAppErrorToPatch(err), nil
 	}
@@ -1620,7 +1631,7 @@ func (h *APIHandler) CreateTransactionsBulk(ctx context.Context, request generat
 		}, nil
 	}
 
-	transactions, err := h.catalog.transactionsBulkCreate.CreateBulk(ctx, input)
+	transactions, err := h.catalog.transactionsBulkCreate.CreateBulk(strictAppContext(ctx), input)
 	if err != nil {
 		return mapTransactionBulkAppErrorToCreate(err), nil
 	}
@@ -1661,7 +1672,7 @@ func (h *APIHandler) DeleteTransaction(ctx context.Context, request generated.De
 		}, nil
 	}
 
-	if _, err := h.catalog.transactionsDelete.DeleteByID(ctx, userID, shared.TransactionID(transactionID)); err != nil {
+	if _, err := h.catalog.transactionsDelete.DeleteByID(strictAppContext(ctx), userID, shared.TransactionID(transactionID)); err != nil {
 		return mapTransactionAppErrorToDelete(err), nil
 	}
 	return generated.DeleteTransaction204Response{}, nil
@@ -1687,7 +1698,7 @@ func (h *APIHandler) GetTransaction(ctx context.Context, request generated.GetTr
 			)),
 		}, nil
 	}
-	transaction, err := h.catalog.transactionsGet.GetByID(ctx, userID, shared.TransactionID(transactionID))
+	transaction, err := h.catalog.transactionsGet.GetByID(strictAppContext(ctx), userID, shared.TransactionID(transactionID))
 	if err != nil {
 		if errors.Is(err, appaccounting.ErrTransactionNotFound) {
 			return generated.GetTransaction404JSONResponse{
@@ -1734,6 +1745,11 @@ func (h *APIHandler) PatchTransaction(ctx context.Context, request generated.Pat
 			)),
 		}, nil
 	}
+	if details := strictDetectPatchNullFields(ctx); len(details) > 0 {
+		return generated.PatchTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
 
 	req := patchTransactionRequest{
 		Type:               optionalStringFromPtr(request.Body.Type),
@@ -1762,7 +1778,7 @@ func (h *APIHandler) PatchTransaction(ctx context.Context, request generated.Pat
 		}, nil
 	}
 
-	transaction, err := h.catalog.transactionsPatch.Patch(ctx, input)
+	transaction, err := h.catalog.transactionsPatch.Patch(strictAppContext(ctx), input)
 	if err != nil {
 		return mapTransactionAppErrorToPatch(err), nil
 	}
@@ -1802,7 +1818,7 @@ func (h *APIHandler) CancelTransaction(ctx context.Context, request generated.Ca
 			)),
 		}, nil
 	}
-	transaction, err := h.catalog.transactionsCancel.CancelByID(ctx, userID, shared.TransactionID(transactionID))
+	transaction, err := h.catalog.transactionsCancel.CancelByID(strictAppContext(ctx), userID, shared.TransactionID(transactionID))
 	if err != nil {
 		return mapTransactionAppErrorToCancel(err), nil
 	}
@@ -1835,6 +1851,11 @@ func (h *APIHandler) DuplicateTransaction(ctx context.Context, request generated
 			)),
 		}, nil
 	}
+	if details := strictDetectDuplicateNullFields(ctx); len(details) > 0 {
+		return generated.DuplicateTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
 	req := duplicateTransactionRequest{}
 	if request.Body != nil {
 		req = duplicateTransactionRequest{
@@ -1857,7 +1878,7 @@ func (h *APIHandler) DuplicateTransaction(ctx context.Context, request generated
 			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
 		}, nil
 	}
-	transaction, err := h.catalog.transactionsDuplicate.DuplicateByID(ctx, input)
+	transaction, err := h.catalog.transactionsDuplicate.DuplicateByID(strictAppContext(ctx), input)
 	if err != nil {
 		return mapTransactionAppErrorToDuplicate(err), nil
 	}
@@ -1897,7 +1918,7 @@ func (h *APIHandler) PostTransaction(ctx context.Context, request generated.Post
 			)),
 		}, nil
 	}
-	transaction, err := h.catalog.transactionsPost.PostByID(ctx, userID, shared.TransactionID(transactionID))
+	transaction, err := h.catalog.transactionsPost.PostByID(strictAppContext(ctx), userID, shared.TransactionID(transactionID))
 	if err != nil {
 		return mapTransactionAppErrorToPost(err), nil
 	}
@@ -2237,6 +2258,99 @@ func mapTransactionBulkAppErrorToPatch(err error) generated.PatchTransactionsBul
 	}
 }
 
+func strictDetectPatchNullFields(ctx context.Context) []catalogFieldError {
+	raw := strictRawRequestBody(ctx)
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	fields := []string{"type", "status", "amount", "currency"}
+	details := make([]catalogFieldError, 0, len(fields))
+	for _, field := range fields {
+		if value, ok := obj[field]; ok && isJSONNullValue(value) {
+			details = append(details, catalogFieldError{Field: field, Message: field + " must not be null"})
+		}
+	}
+	return details
+}
+
+func strictDetectBulkPatchNullFields(ctx context.Context) []catalogFieldError {
+	raw := strictRawRequestBody(ctx)
+	if len(raw) == 0 {
+		return nil
+	}
+	var payload struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+	if len(payload.Items) == 0 {
+		return nil
+	}
+	fields := []string{"type", "status", "amount", "currency"}
+	details := make([]catalogFieldError, 0)
+	for idx, itemRaw := range payload.Items {
+		var item map[string]json.RawMessage
+		if err := json.Unmarshal(itemRaw, &item); err != nil {
+			continue
+		}
+		for _, field := range fields {
+			if value, ok := item[field]; ok && isJSONNullValue(value) {
+				details = append(details, catalogFieldError{
+					Field:   "items[" + strconv.Itoa(idx) + "]." + field,
+					Message: field + " must not be null",
+				})
+			}
+		}
+	}
+	return details
+}
+
+func strictDetectDuplicateNullFields(ctx context.Context) []catalogFieldError {
+	raw := strictRawRequestBody(ctx)
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	fields := []string{"status"}
+	details := make([]catalogFieldError, 0, len(fields))
+	for _, field := range fields {
+		if value, ok := obj[field]; ok && isJSONNullValue(value) {
+			details = append(details, catalogFieldError{Field: field, Message: field + " must not be null"})
+		}
+	}
+	return details
+}
+
+func strictRawRequestBody(ctx context.Context) []byte {
+	carrier, ok := ctx.(interface {
+		Get(string) (any, bool)
+	})
+	if !ok {
+		return nil
+	}
+	value, exists := carrier.Get(rawRequestBodyContextKey)
+	if !exists {
+		return nil
+	}
+	body, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return body
+}
+
+func isJSONNullValue(value []byte) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
+}
+
 func isTransactionConflictError(err error) bool {
 	return errors.Is(err, appaccounting.ErrConcurrentTransactionUpdate) ||
 		errors.Is(err, appaccounting.ErrTransactionAlreadyPosted) ||
@@ -2269,7 +2383,7 @@ func (h *APIHandler) RegisterAuth(ctx context.Context, request generated.Registe
 		return generated.RegisterAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	tokens, err := h.auth.auth.Register(ctx, appidentity.RegisterInput{
+	tokens, err := h.auth.auth.Register(strictAppContext(ctx), appidentity.RegisterInput{
 		Email:           *request.Body.Email,
 		Password:        *request.Body.Password,
 		PasswordConfirm: *request.Body.PasswordConfirm,
@@ -2296,7 +2410,7 @@ func (h *APIHandler) LoginAuth(ctx context.Context, request generated.LoginAuthR
 		return generated.LoginAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	tokens, err := h.auth.auth.Login(ctx, appidentity.LoginInput{
+	tokens, err := h.auth.auth.Login(strictAppContext(ctx), appidentity.LoginInput{
 		Email:    *request.Body.Email,
 		Password: *request.Body.Password,
 	})
@@ -2331,7 +2445,7 @@ func (h *APIHandler) RefreshAuth(ctx context.Context, _ generated.RefreshAuthReq
 		return generated.RefreshAuth401JSONResponse{Error: "invalid_refresh_token"}, nil
 	}
 
-	tokens, refreshErr := h.auth.auth.Refresh(ctx, appidentity.RefreshInput{RefreshToken: refreshToken})
+	tokens, refreshErr := h.auth.auth.Refresh(strictAppContext(ctx), appidentity.RefreshInput{RefreshToken: refreshToken})
 	if refreshErr != nil {
 		return mapRefreshAuthError(refreshErr), nil
 	}
@@ -2361,13 +2475,13 @@ func (h *APIHandler) LogoutAuth(ctx context.Context, _ generated.LogoutAuthReque
 	}
 
 	if strings.TrimSpace(refreshToken) != "" {
-		if logoutErr := h.auth.auth.Logout(ctx, appidentity.LogoutInput{RefreshToken: refreshToken}); logoutErr != nil && !errors.Is(logoutErr, appidentity.ErrInvalidRefreshToken) {
+		if logoutErr := h.auth.auth.Logout(strictAppContext(ctx), appidentity.LogoutInput{RefreshToken: refreshToken}); logoutErr != nil && !errors.Is(logoutErr, appidentity.ErrInvalidRefreshToken) {
 			return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
 		}
 	} else {
 		accessToken := parseBearerToken(ginCtx.GetHeader("Authorization"))
 		if strings.TrimSpace(accessToken) != "" {
-			if logoutCurrentErr := h.auth.auth.LogoutCurrent(ctx, appidentity.LogoutCurrentInput{AccessToken: accessToken}); logoutCurrentErr != nil && !errors.Is(logoutCurrentErr, appidentity.ErrInvalidAccessToken) {
+			if logoutCurrentErr := h.auth.auth.LogoutCurrent(strictAppContext(ctx), appidentity.LogoutCurrentInput{AccessToken: accessToken}); logoutCurrentErr != nil && !errors.Is(logoutCurrentErr, appidentity.ErrInvalidAccessToken) {
 				return generated.LogoutAuth500JSONResponse{Error: "internal_error"}, nil
 			}
 		}
@@ -2392,7 +2506,7 @@ func (h *APIHandler) LogoutAllAuth(ctx context.Context, _ generated.LogoutAllAut
 		return generated.LogoutAllAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
 
-	if logoutErr := h.auth.auth.LogoutAll(ctx, appidentity.LogoutAllInput{AccessToken: accessToken}); logoutErr != nil {
+	if logoutErr := h.auth.auth.LogoutAll(strictAppContext(ctx), appidentity.LogoutAllInput{AccessToken: accessToken}); logoutErr != nil {
 		return mapLogoutAllAuthError(logoutErr), nil
 	}
 
@@ -2433,7 +2547,7 @@ func (h *APIHandler) SessionsAuth(ctx context.Context, _ generated.SessionsAuthR
 		return generated.SessionsAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
 
-	sessions, listErr := h.auth.auth.ListActiveSessions(ctx, appidentity.ListSessionsInput{UserID: user.ID})
+	sessions, listErr := h.auth.auth.ListActiveSessions(strictAppContext(ctx), appidentity.ListSessionsInput{UserID: user.ID})
 	if listErr != nil {
 		return generated.SessionsAuth500JSONResponse{Error: "internal_error"}, nil
 	}
@@ -2473,7 +2587,7 @@ func (h *APIHandler) RevokeSessionAuth(ctx context.Context, request generated.Re
 		return generated.RevokeSessionAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	revokeErr := h.auth.auth.RevokeSession(ctx, appidentity.RevokeSessionInput{
+	revokeErr := h.auth.auth.RevokeSession(strictAppContext(ctx), appidentity.RevokeSessionInput{
 		UserID:    user.ID,
 		SessionID: shared.SessionID(sessionID),
 	})
@@ -2495,7 +2609,7 @@ func (h *APIHandler) ForgotPasswordAuth(ctx context.Context, request generated.F
 		return generated.ForgotPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	forgotErr := h.auth.postMVP.ForgotPassword(ctx, appidentity.ForgotPasswordInput{Email: *request.Body.Email})
+	forgotErr := h.auth.postMVP.ForgotPassword(strictAppContext(ctx), appidentity.ForgotPasswordInput{Email: *request.Body.Email})
 	if forgotErr != nil {
 		return mapPostMVPForgotPasswordError(forgotErr), nil
 	}
@@ -2510,7 +2624,7 @@ func (h *APIHandler) ResetPasswordAuth(ctx context.Context, request generated.Re
 		return generated.ResetPasswordAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	resetErr := h.auth.postMVP.ResetPassword(ctx, appidentity.ResetPasswordInput{
+	resetErr := h.auth.postMVP.ResetPassword(strictAppContext(ctx), appidentity.ResetPasswordInput{
 		Token:           *request.Body.Token,
 		Password:        *request.Body.Password,
 		PasswordConfirm: *request.Body.PasswordConfirm,
@@ -2534,7 +2648,7 @@ func (h *APIHandler) SendVerificationEmailAuth(ctx context.Context, _ generated.
 		return generated.SendVerificationEmailAuth401JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_access_token"}}, nil
 	}
 
-	sendErr := h.auth.postMVP.SendVerificationEmail(ctx, appidentity.SendVerificationEmailInput{UserID: userID})
+	sendErr := h.auth.postMVP.SendVerificationEmail(strictAppContext(ctx), appidentity.SendVerificationEmailInput{UserID: userID})
 	if sendErr != nil {
 		return mapPostMVPSendVerificationEmailError(sendErr), nil
 	}
@@ -2549,7 +2663,7 @@ func (h *APIHandler) VerifyEmailAuth(ctx context.Context, request generated.Veri
 		return generated.VerifyEmailAuth400JSONResponse{AuthErrorJSONResponse: generated.AuthErrorJSONResponse{Error: "invalid_request"}}, nil
 	}
 
-	verifyErr := h.auth.postMVP.VerifyEmail(ctx, appidentity.VerifyEmailInput{Token: *request.Body.Token})
+	verifyErr := h.auth.postMVP.VerifyEmail(strictAppContext(ctx), appidentity.VerifyEmailInput{Token: *request.Body.Token})
 	if verifyErr != nil {
 		return mapPostMVPVerifyEmailError(verifyErr), nil
 	}
@@ -2652,4 +2766,15 @@ func mapPostMVPVerifyEmailError(err error) generated.VerifyEmailAuthResponseObje
 	default:
 		return generated.VerifyEmailAuth500JSONResponse{Error: "internal_error"}
 	}
+}
+
+func strictAppContext(ctx context.Context) context.Context {
+	ginCtx, ok := ctx.(*gin.Context)
+	if !ok || ginCtx == nil || ginCtx.Request == nil {
+		return ctx
+	}
+	if reqCtx := ginCtx.Request.Context(); reqCtx != nil {
+		return reqCtx
+	}
+	return ctx
 }

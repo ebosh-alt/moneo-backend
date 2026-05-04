@@ -54,6 +54,23 @@ func TestTransactionsStrictWriteCreatePatchDelete(t *testing.T) {
 		t.Fatalf("expected updated comment, got %v", patched["comment"])
 	}
 
+	nullPatchRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/"+transactionID, map[string]any{
+		"amount": nil,
+	}, headers)
+	if nullPatchRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for null patch field, got %d, body=%s", nullPatchRec.Code, nullPatchRec.Body.String())
+	}
+	var nullPatchPayload structuredErrorResponse
+	decodeJSONResponse(t, nullPatchRec, &nullPatchPayload)
+	assertErrorDetailField(t, nullPatchPayload.Error.Details, "amount")
+
+	clearCommentRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/"+transactionID, map[string]any{
+		"comment": nil,
+	}, headers)
+	if clearCommentRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for nullable comment clear, got %d, body=%s", clearCommentRec.Code, clearCommentRec.Body.String())
+	}
+
 	deleteRec := performJSONRequest(t, fixture.router, http.MethodDelete, "/api/v1/transactions/"+transactionID, nil, headers)
 	if deleteRec.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d, body=%s", deleteRec.Code, deleteRec.Body.String())
@@ -127,6 +144,23 @@ func TestTransactionsStrictWritePostCancelDuplicate(t *testing.T) {
 	if duplicateDefault["status"] != "planned" {
 		t.Fatalf("expected planned duplicate status, got %v", duplicateDefault["status"])
 	}
+
+	duplicateNullStatusRec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions/txn_state/duplicate", map[string]any{
+		"status": nil,
+	}, headers)
+	if duplicateNullStatusRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for null duplicate status, got %d, body=%s", duplicateNullStatusRec.Code, duplicateNullStatusRec.Body.String())
+	}
+	var duplicateNullStatusPayload structuredErrorResponse
+	decodeJSONResponse(t, duplicateNullStatusRec, &duplicateNullStatusPayload)
+	assertErrorDetailField(t, duplicateNullStatusPayload.Error.Details, "status")
+
+	duplicateNullCommentRec := performJSONRequest(t, fixture.router, http.MethodPost, "/api/v1/transactions/txn_state/duplicate", map[string]any{
+		"comment": nil,
+	}, headers)
+	if duplicateNullCommentRec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 for nullable duplicate comment, got %d, body=%s", duplicateNullCommentRec.Code, duplicateNullCommentRec.Body.String())
+	}
 }
 
 func TestTransactionsStrictWriteBulkEndpoints(t *testing.T) {
@@ -198,6 +232,33 @@ func TestTransactionsStrictWriteBulkEndpoints(t *testing.T) {
 	}, headers)
 	if okPatchRec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d, body=%s", okPatchRec.Code, okPatchRec.Body.String())
+	}
+
+	nullBulkPatchRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"id":     "txn_bp_1",
+				"status": nil,
+			},
+		},
+	}, headers)
+	if nullBulkPatchRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for null bulk patch field, got %d, body=%s", nullBulkPatchRec.Code, nullBulkPatchRec.Body.String())
+	}
+	var nullBulkPatchPayload structuredErrorResponse
+	decodeJSONResponse(t, nullBulkPatchRec, &nullBulkPatchPayload)
+	assertErrorDetailField(t, nullBulkPatchPayload.Error.Details, "items[0].status")
+
+	clearBulkCommentRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/bulk", map[string]any{
+		"items": []map[string]any{
+			{
+				"id":      "txn_bp_1",
+				"comment": nil,
+			},
+		},
+	}, headers)
+	if clearBulkCommentRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for nullable bulk comment clear, got %d, body=%s", clearBulkCommentRec.Code, clearBulkCommentRec.Body.String())
 	}
 
 	conflictPatchRec := performJSONRequest(t, fixture.router, http.MethodPatch, "/api/v1/transactions/bulk", map[string]any{

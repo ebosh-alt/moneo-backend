@@ -12,8 +12,8 @@ OPENAPI_GEN_FILE ?= internal/transport/http/generated/api.gen.go
 .PHONY: create-migration migrate-up migrate-down migrate-status migrate-version db-init
 .PHONY: ops-repair-transactions-dry-run ops-repair-transactions
 .PHONY: ops-verify-transactions-baseline ops-verify-transactions
-.PHONY: fmt vet test build check
-.PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-guard openapi-check
+.PHONY: fmt vet test build check verify
+.PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-guard openapi-check openapi-docs
 
 fmt:
 	go fmt ./...
@@ -31,15 +31,15 @@ build:
 check: fmt vet openapi-lint openapi-generate test build
 
 openapi-lint:
-	npx @redocly/cli lint $(OPENAPI_SRC)
+	npx --yes @redocly/cli lint $(OPENAPI_SRC)
 
 openapi-bundle:
 	mkdir -p api/bundled
-	npx @redocly/cli bundle $(OPENAPI_SRC) -o $(OPENAPI_BUNDLE)
+	npx --yes @redocly/cli bundle $(OPENAPI_SRC) -o $(OPENAPI_BUNDLE)
 
 openapi-generate: openapi-bundle
 	mkdir -p internal/transport/http/generated
-	oapi-codegen -config $(OPENAPI_GEN_CONFIG) $(OPENAPI_BUNDLE) > $(OPENAPI_GEN_FILE)
+	oapi-codegen -config $(OPENAPI_GEN_CONFIG) $(OPENAPI_BUNDLE)
 
 openapi: openapi-lint openapi-generate
 
@@ -52,6 +52,12 @@ openapi-guard:
 
 openapi-check: openapi openapi-guard
 	git diff --exit-code $(OPENAPI_GEN_FILE) $(OPENAPI_BUNDLE)
+
+openapi-docs:
+	mkdir -p docs
+	npx --yes @redocly/cli build-docs $(OPENAPI_SRC) -o docs/api.html
+
+verify: openapi-check fmt vet test build
 
 create-migration:
 	@if [ -z "$(NAME)" ]; then echo "NAME is required: make create-migration NAME=add_new_table"; exit 1; fi
