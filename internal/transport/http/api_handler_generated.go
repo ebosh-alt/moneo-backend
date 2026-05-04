@@ -1,14 +1,9 @@
 package http
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net/http/httptest"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -22,12 +17,8 @@ import (
 	"moneo/internal/domain/shared"
 	domaintransactions "moneo/internal/domain/transactions"
 	generated "moneo/internal/transport/http/generated"
-
-	"github.com/gin-gonic/gin"
 )
 
-// APIHandler adapts generated strict server calls to existing transport handlers.
-// It keeps business logic in app/domain and reuses existing HTTP mapping behavior.
 type APIHandler struct {
 	auth    *AuthHandler
 	catalog *CatalogHandler
@@ -37,206 +28,6 @@ func NewAPIHandler(auth *AuthHandler, catalog *CatalogHandler) *APIHandler {
 	return &APIHandler{
 		auth:    auth,
 		catalog: catalog,
-	}
-}
-
-func WithAuthStrictHandler(
-	auth *AuthHandler,
-	strict generated.StrictServerInterface,
-) generated.StrictServerInterface {
-	if strict == nil {
-		authLegacy := NewAPIHandler(auth, nil)
-		return NewStrictAPIHandler(StrictAPIHandlerDeps{
-			Accounts:      authLegacy,
-			Auth:          authLegacy,
-			Categories:    authLegacy,
-			Subcategories: authLegacy,
-			Transactions:  authLegacy,
-		})
-	}
-
-	if strictHandler, ok := strict.(*StrictAPIHandler); ok {
-		authLegacy := NewAPIHandler(auth, nil)
-		return NewStrictAPIHandler(StrictAPIHandlerDeps{
-			Accounts:      strictHandler.AccountsStrictHandler,
-			Auth:          authLegacy,
-			Categories:    strictHandler.CategoriesStrictHandler,
-			Subcategories: strictHandler.SubcategoriesStrictHandler,
-			Transactions:  strictHandler.TransactionsStrictHandler,
-		})
-	}
-
-	apiHandler, ok := strict.(*APIHandler)
-	if !ok {
-		return strict
-	}
-	legacy := NewAPIHandler(auth, apiHandler.catalog)
-	return NewStrictAPIHandler(StrictAPIHandlerDeps{
-		Accounts:      legacy,
-		Auth:          legacy,
-		Categories:    legacy,
-		Subcategories: legacy,
-		Transactions:  legacy,
-	})
-}
-
-func (h *APIHandler) invokeHandler(
-	ctx context.Context,
-	request any,
-	target any,
-	targetName string,
-	handlerName string,
-	decode func(status int, payload []byte) (any, error),
-) (any, error) {
-	if h == nil || target == nil {
-		return nil, fmt.Errorf("%s handler is not configured", targetName)
-	}
-
-	ginCtx, ok := ctx.(*gin.Context)
-	if !ok || ginCtx == nil || ginCtx.Request == nil {
-		return nil, fmt.Errorf("gin context is required")
-	}
-
-	recorder := httptest.NewRecorder()
-	proxy, _ := gin.CreateTestContext(recorder)
-	proxy.Request = ginCtx.Request.Clone(ginCtx.Request.Context())
-	proxy.Params = append(gin.Params(nil), ginCtx.Params...)
-	if ginCtx.Keys != nil {
-		for k, v := range ginCtx.Keys {
-			proxy.Set(k, v)
-		}
-	}
-
-	if bodyRaw, hasBody := extractRequestBody(request); hasBody {
-		if len(bodyRaw) == 0 {
-			bodyRaw = []byte("{}")
-		}
-		proxy.Request.Body = io.NopCloser(bytes.NewReader(bodyRaw))
-		proxy.Request.ContentLength = int64(len(bodyRaw))
-		proxy.Request.Header = proxy.Request.Header.Clone()
-		proxy.Request.Header.Set("Content-Type", "application/json")
-	}
-
-	method := reflect.ValueOf(target).MethodByName(handlerName)
-	if !method.IsValid() {
-		return nil, fmt.Errorf("%s handler method %s not found", targetName, handlerName)
-	}
-	method.Call([]reflect.Value{reflect.ValueOf(proxy)})
-	proxy.Writer.WriteHeaderNow()
-	for _, setCookie := range recorder.Header().Values("Set-Cookie") {
-		ginCtx.Writer.Header().Add("Set-Cookie", setCookie)
-	}
-
-	return decode(recorder.Code, recorder.Body.Bytes())
-}
-
-func (h *APIHandler) invokeAuth(
-	ctx context.Context,
-	request any,
-	handlerName string,
-	decode func(status int, payload []byte) (any, error),
-) (any, error) {
-	return h.invokeHandler(ctx, request, h.auth, "auth", handlerName, decode)
-}
-
-func (h *APIHandler) invokeCatalog(
-	ctx context.Context,
-	request any,
-	handlerName string,
-	decode func(status int, payload []byte) (any, error),
-) (any, error) {
-	return h.invokeHandler(ctx, request, h.catalog, "catalog", handlerName, decode)
-}
-
-func extractRequestBody(request any) ([]byte, bool) {
-	rv := reflect.ValueOf(request)
-	if rv.Kind() != reflect.Struct {
-		return nil, false
-	}
-	bodyField := rv.FieldByName("Body")
-	if !bodyField.IsValid() || bodyField.IsNil() {
-		return nil, false
-	}
-
-	sparsePayload, ok := toSparseJSONValue(bodyField)
-	if !ok {
-		return nil, false
-	}
-
-	payload, err := json.Marshal(sparsePayload)
-	if err != nil {
-		return []byte("{}"), true
-	}
-	return payload, true
-}
-
-func toSparseJSONValue(value reflect.Value) (any, bool) {
-	if !value.IsValid() {
-		return nil, false
-	}
-
-	switch value.Kind() {
-	case reflect.Pointer:
-		if value.IsNil() {
-			return nil, false
-		}
-		return toSparseJSONValue(value.Elem())
-	case reflect.Struct:
-		result := make(map[string]any)
-		valueType := value.Type()
-		for i := 0; i < value.NumField(); i++ {
-			fieldType := valueType.Field(i)
-			if fieldType.PkgPath != "" {
-				continue
-			}
-
-			jsonTag := fieldType.Tag.Get("json")
-			fieldName := fieldType.Name
-			if jsonTag != "" {
-				tagName := strings.Split(jsonTag, ",")[0]
-				if tagName == "-" {
-					continue
-				}
-				if tagName != "" {
-					fieldName = tagName
-				}
-			}
-
-			fieldValue := value.Field(i)
-			if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
-				continue
-			}
-
-			encodedField, ok := toSparseJSONValue(fieldValue)
-			if !ok {
-				continue
-			}
-			result[fieldName] = encodedField
-		}
-		return result, true
-	case reflect.Slice, reflect.Array:
-		items := make([]any, 0, value.Len())
-		for i := 0; i < value.Len(); i++ {
-			item, ok := toSparseJSONValue(value.Index(i))
-			if !ok {
-				items = append(items, nil)
-				continue
-			}
-			items = append(items, item)
-		}
-		return items, true
-	case reflect.Map:
-		if value.IsNil() {
-			return nil, false
-		}
-		return value.Interface(), true
-	case reflect.Interface:
-		if value.IsNil() {
-			return nil, false
-		}
-		return toSparseJSONValue(value.Elem())
-	default:
-		return value.Interface(), true
 	}
 }
 

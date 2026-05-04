@@ -189,7 +189,7 @@ func NewAPI(cfg Config) (*API, error) {
 		Subcategories: legacyStrictHandler,
 		Transactions:  legacyStrictHandler,
 	})
-	router := transporthttp.NewRouterWithOptions(authHandler, transporthttp.RouterOptions{
+	router := transporthttp.NewRouterWithOptions(transporthttp.RouterOptions{
 		AuthMiddleware:   authMiddleware,
 		StrictAPIHandler: apiHandler,
 	})

@@ -793,8 +793,25 @@ func newAuthEndpointsFixtureWithRouterOptions(t *testing.T, routerOptions transp
 	}
 
 	handler := transporthttp.NewAuthHandler(authFlowService, postMVPService)
-	routerOptions.StrictAPIHandler = transporthttp.WithAuthStrictHandler(handler, routerOptions.StrictAPIHandler)
-	router := transporthttp.NewRouterWithOptions(handler, routerOptions)
+	authOnlyHandler := transporthttp.NewAPIHandler(handler, nil)
+	if routerOptions.StrictAPIHandler == nil {
+		routerOptions.StrictAPIHandler = transporthttp.NewStrictAPIHandler(transporthttp.StrictAPIHandlerDeps{
+			Accounts:      authOnlyHandler,
+			Auth:          authOnlyHandler,
+			Categories:    authOnlyHandler,
+			Subcategories: authOnlyHandler,
+			Transactions:  authOnlyHandler,
+		})
+	} else {
+		routerOptions.StrictAPIHandler = transporthttp.NewStrictAPIHandler(transporthttp.StrictAPIHandlerDeps{
+			Accounts:      routerOptions.StrictAPIHandler.(transporthttp.AccountsStrictHandler),
+			Auth:          authOnlyHandler,
+			Categories:    routerOptions.StrictAPIHandler.(transporthttp.CategoriesStrictHandler),
+			Subcategories: routerOptions.StrictAPIHandler.(transporthttp.SubcategoriesStrictHandler),
+			Transactions:  routerOptions.StrictAPIHandler.(transporthttp.TransactionsStrictHandler),
+		})
+	}
+	router := transporthttp.NewRouterWithOptions(routerOptions)
 
 	return authEndpointsFixture{
 		router:              router,

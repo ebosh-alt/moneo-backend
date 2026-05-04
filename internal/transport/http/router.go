@@ -16,18 +16,16 @@ type RouterOptions struct {
 	StrictAPIHandler   generated.StrictServerInterface
 }
 
-func NewRouter(authHandler *AuthHandler, authMiddleware ...gin.HandlerFunc) *gin.Engine {
+func NewRouter(authMiddleware ...gin.HandlerFunc) *gin.Engine {
 	options := RouterOptions{}
 	if len(authMiddleware) > 0 {
 		options.AuthMiddleware = authMiddleware[0]
 	}
 
-	return NewRouterWithOptions(authHandler, options)
+	return NewRouterWithOptions(options)
 }
 
-func NewRouterWithOptions(authHandler *AuthHandler, options RouterOptions) *gin.Engine {
-	_ = authHandler
-
+func NewRouterWithOptions(options RouterOptions) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
