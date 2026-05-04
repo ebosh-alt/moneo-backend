@@ -9,15 +9,11 @@ OPENAPI_BUNDLE ?= api/bundled/openapi.yaml
 OPENAPI_GEN_CONFIG ?= oapi-codegen.yaml
 OPENAPI_GEN_FILE ?= internal/transport/http/generated/api.gen.go
 
-.PHONY: swag_init create-migration migrate-up migrate-down migrate-status migrate-version db-init
+.PHONY: create-migration migrate-up migrate-down migrate-status migrate-version db-init
 .PHONY: ops-repair-transactions-dry-run ops-repair-transactions
 .PHONY: ops-verify-transactions-baseline ops-verify-transactions
 .PHONY: fmt vet test build check
 .PHONY: openapi-lint openapi-bundle openapi-generate openapi openapi-check
-
-swag_init:
-	swag init --parseInternal -g main.go -o docs -d cmd/server,internal/transport/http,internal/app/accounts,internal/domain/accounts,internal/domain/deals,internal/infra/postgres
-	@awk '!/LeftDelim:|RightDelim:/' docs/docs.go > docs/docs.go.tmp && mv docs/docs.go.tmp docs/docs.go
 
 fmt:
 	go fmt ./...
