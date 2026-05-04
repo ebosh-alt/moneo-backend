@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	appaccounting "moneo/internal/app/accounting"
 	appcatalog "moneo/internal/app/catalog"
@@ -19,6 +20,7 @@ import (
 	domaincatalog "moneo/internal/domain/catalog"
 	domainidentity "moneo/internal/domain/identity"
 	"moneo/internal/domain/shared"
+	domaintransactions "moneo/internal/domain/transactions"
 	generated "moneo/internal/transport/http/generated"
 
 	"github.com/gin-gonic/gin"
@@ -1593,673 +1595,879 @@ func toGeneratedSubcategory(subcategory domaincatalog.Subcategory) generated.Sub
 }
 
 func (h *APIHandler) ListTransactions(ctx context.Context, request generated.ListTransactionsRequestObject) (generated.ListTransactionsResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.ListTransactions200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.ListTransactions400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.ListTransactions401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.ListTransactions500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsList == nil {
+		return generated.ListTransactions500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "ListTransactions", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.ListTransactionsResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for ListTransactions", result)
+		return generated.ListTransactions401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+
+	limit, offset, details := strictParseLimitOffset(request.Params.Limit, request.Params.Offset)
+	if len(details) > 0 {
+		return generated.ListTransactions400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	query, details := strictParseListTransactionsQuery(userID, request.Params)
+	if len(details) > 0 {
+		return generated.ListTransactions400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+	query.Limit = limit
+	query.Offset = offset
+
+	transactions, err := h.catalog.transactionsList.ListByUser(ctx, query)
+	if err != nil {
+		return generated.ListTransactions500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	total, err := h.catalog.transactionsList.CountByUser(ctx, query)
+	if err != nil {
+		return generated.ListTransactions500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+
+	items := make([]generated.Transaction, 0, len(transactions))
+	for _, transaction := range transactions {
+		item, mapErr := toGeneratedTransaction(transaction)
+		if mapErr != nil {
+			return generated.ListTransactions500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		items = append(items, item)
+	}
+
+	return generated.ListTransactions200JSONResponse{
+		Items: items,
+		Pagination: generated.Pagination{
+			Limit:  limit,
+			Offset: offset,
+			Total:  total,
+		},
+	}, nil
 }
 
 func (h *APIHandler) CreateTransaction(ctx context.Context, request generated.CreateTransactionRequestObject) (generated.CreateTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateTransaction201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateTransaction422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsCreate == nil {
+		return generated.CreateTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CreateTransactionResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateTransaction", result)
+		return generated.CreateTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+	if request.Body == nil {
+		return generated.CreateTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := createTransactionRequest{
+		Amount:             decimalPtrFromStringPtr(request.Body.Amount),
+		Type:               valueOrEmpty(request.Body.Type),
+		Status:             valueOrEmpty(request.Body.Status),
+		Currency:           valueOrEmpty(request.Body.Currency),
+		OccurredAt:         request.Body.OccurredAt,
+		PlannedAt:          request.Body.PlannedAt,
+		AccountFromID:      request.Body.AccountFromId,
+		AccountToID:        request.Body.AccountToId,
+		CategoryID:         request.Body.CategoryId,
+		SubcategoryID:      request.Body.SubcategoryId,
+		Comment:            request.Body.Comment,
+		BudgetMemberID:     rawJSONPtrFromStringPtr(request.Body.BudgetMemberId),
+		IncomeSourceID:     rawJSONPtrFromStringPtr(request.Body.IncomeSourceId),
+		DebtID:             rawJSONPtrFromStringPtr(request.Body.DebtId),
+		GoalID:             rawJSONPtrFromStringPtr(request.Body.GoalId),
+		InvestmentID:       rawJSONPtrFromStringPtr(request.Body.InvestmentId),
+		RecurringPaymentID: rawJSONPtrFromStringPtr(request.Body.RecurringPaymentId),
+	}
+
+	input, details := validateCreateTransactionRequest(userID, req)
+	if len(details) > 0 {
+		return generated.CreateTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	transaction, err := h.catalog.transactionsCreate.Create(ctx, input)
+	if err != nil {
+		return mapTransactionAppErrorToCreate(err), nil
+	}
+
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.CreateTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.CreateTransaction201JSONResponse(response), nil
 }
 
 func (h *APIHandler) PatchTransactionsBulk(ctx context.Context, request generated.PatchTransactionsBulkRequestObject) (generated.PatchTransactionsBulkResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchTransactionsBulk200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchTransactionsBulk400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchTransactionsBulk401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchTransactionsBulk404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchTransactionsBulk409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.PatchTransactionsBulk422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchTransactionsBulk500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+	if h == nil || h.catalog == nil || h.catalog.transactionsBulkPatch == nil {
+		return generated.PatchTransactionsBulk500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.PatchTransactionsBulk401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	req := patchTransactionsBulkRequest{}
+	if request.Body != nil && request.Body.Items != nil {
+		req.Items = make([]patchTransactionsBulkItemRequest, 0, len(*request.Body.Items))
+		for _, item := range *request.Body.Items {
+			req.Items = append(req.Items, patchTransactionsBulkItemRequest{
+				ID:                 valueOrEmpty(item.Id),
+				Type:               optionalStringFromPtr(item.Type),
+				Status:             optionalStringFromPtr(item.Status),
+				Amount:             optionalDecimalFromPtr(item.Amount),
+				Currency:           optionalStringFromPtr(item.Currency),
+				OccurredAt:         optionalStringFromPtr(item.OccurredAt),
+				PlannedAt:          optionalStringFromPtr(item.PlannedAt),
+				AccountFromID:      optionalStringFromPtr(item.AccountFromId),
+				AccountToID:        optionalStringFromPtr(item.AccountToId),
+				CategoryID:         optionalStringFromPtr(item.CategoryId),
+				SubcategoryID:      optionalStringFromPtr(item.SubcategoryId),
+				Comment:            optionalStringFromPtr(item.Comment),
+				BudgetMemberID:     optionalRawFromPtr(item.BudgetMemberId),
+				IncomeSourceID:     optionalRawFromPtr(item.IncomeSourceId),
+				DebtID:             optionalRawFromPtr(item.DebtId),
+				GoalID:             optionalRawFromPtr(item.GoalId),
+				InvestmentID:       optionalRawFromPtr(item.InvestmentId),
+				RecurringPaymentID: optionalRawFromPtr(item.RecurringPaymentId),
+			})
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchTransactionsBulk", decode)
+
+	input, details := validatePatchTransactionsBulkRequest(userID, req)
+	if len(details) > 0 {
+		return generated.PatchTransactionsBulk400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	transactions, err := h.catalog.transactionsBulkPatch.PatchBulk(ctx, input)
 	if err != nil {
-		return nil, err
+		return mapTransactionBulkAppErrorToPatch(err), nil
 	}
-	typed, ok := result.(generated.PatchTransactionsBulkResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchTransactionsBulk", result)
+
+	items := make([]generated.Transaction, 0, len(transactions))
+	for _, transaction := range transactions {
+		item, mapErr := toGeneratedTransaction(transaction)
+		if mapErr != nil {
+			return generated.PatchTransactionsBulk500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		items = append(items, item)
 	}
-	return typed, nil
+	return generated.PatchTransactionsBulk200JSONResponse{
+		Items: items,
+	}, nil
 }
 
 func (h *APIHandler) CreateTransactionsBulk(ctx context.Context, request generated.CreateTransactionsBulkRequestObject) (generated.CreateTransactionsBulkResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.CreateTransactionsBulk201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CreateTransactionsBulk400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CreateTransactionsBulk401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CreateTransactionsBulk404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CreateTransactionsBulk409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.CreateTransactionsBulk422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CreateTransactionsBulk500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+	if h == nil || h.catalog == nil || h.catalog.transactionsBulkCreate == nil {
+		return generated.CreateTransactionsBulk500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.CreateTransactionsBulk401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	req := createTransactionsBulkRequest{}
+	if request.Body != nil && request.Body.Items != nil {
+		req.Items = make([]createTransactionRequest, 0, len(*request.Body.Items))
+		for _, item := range *request.Body.Items {
+			req.Items = append(req.Items, createTransactionRequest{
+				Type:               valueOrEmpty(item.Type),
+				Status:             valueOrEmpty(item.Status),
+				Amount:             decimalPtrFromStringPtr(item.Amount),
+				Currency:           valueOrEmpty(item.Currency),
+				OccurredAt:         item.OccurredAt,
+				PlannedAt:          item.PlannedAt,
+				AccountFromID:      item.AccountFromId,
+				AccountToID:        item.AccountToId,
+				CategoryID:         item.CategoryId,
+				SubcategoryID:      item.SubcategoryId,
+				Comment:            item.Comment,
+				BudgetMemberID:     rawJSONPtrFromStringPtr(item.BudgetMemberId),
+				IncomeSourceID:     rawJSONPtrFromStringPtr(item.IncomeSourceId),
+				DebtID:             rawJSONPtrFromStringPtr(item.DebtId),
+				GoalID:             rawJSONPtrFromStringPtr(item.GoalId),
+				InvestmentID:       rawJSONPtrFromStringPtr(item.InvestmentId),
+				RecurringPaymentID: rawJSONPtrFromStringPtr(item.RecurringPaymentId),
+			})
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "CreateTransactionsBulk", decode)
+
+	input, details := validateCreateTransactionsBulkRequest(userID, req)
+	if len(details) > 0 {
+		return generated.CreateTransactionsBulk400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	transactions, err := h.catalog.transactionsBulkCreate.CreateBulk(ctx, input)
 	if err != nil {
-		return nil, err
+		return mapTransactionBulkAppErrorToCreate(err), nil
 	}
-	typed, ok := result.(generated.CreateTransactionsBulkResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CreateTransactionsBulk", result)
+
+	items := make([]generated.Transaction, 0, len(transactions))
+	for _, transaction := range transactions {
+		item, mapErr := toGeneratedTransaction(transaction)
+		if mapErr != nil {
+			return generated.CreateTransactionsBulk500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}, nil
+		}
+		items = append(items, item)
 	}
-	return typed, nil
+	return generated.CreateTransactionsBulk201JSONResponse{
+		Items: items,
+	}, nil
 }
 
 func (h *APIHandler) DeleteTransaction(ctx context.Context, request generated.DeleteTransactionRequestObject) (generated.DeleteTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 204:
-			return generated.DeleteTransaction204Response{}, nil
-		case 400:
-			var response generated.DeleteTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DeleteTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DeleteTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.DeleteTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DeleteTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsDelete == nil {
+		return generated.DeleteTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "DeleteTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.DeleteTransactionResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DeleteTransaction", result)
+		return generated.DeleteTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.DeleteTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+
+	if _, err := h.catalog.transactionsDelete.DeleteByID(ctx, userID, shared.TransactionID(transactionID)); err != nil {
+		return mapTransactionAppErrorToDelete(err), nil
+	}
+	return generated.DeleteTransaction204Response{}, nil
 }
 
 func (h *APIHandler) GetTransaction(ctx context.Context, request generated.GetTransactionRequestObject) (generated.GetTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.GetTransaction200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.GetTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.GetTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.GetTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.GetTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsGet == nil {
+		return generated.GetTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "GetTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.GetTransactionResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for GetTransaction", result)
+		return generated.GetTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.GetTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+	transaction, err := h.catalog.transactionsGet.GetByID(ctx, userID, shared.TransactionID(transactionID))
+	if err != nil {
+		if errors.Is(err, appaccounting.ErrTransactionNotFound) {
+			return generated.GetTransaction404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found")),
+			}, nil
+		}
+		return generated.GetTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.GetTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.GetTransaction200JSONResponse(response), nil
 }
 
 func (h *APIHandler) PatchTransaction(ctx context.Context, request generated.PatchTransactionRequestObject) (generated.PatchTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PatchTransaction200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.PatchTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PatchTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PatchTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PatchTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.PatchTransaction422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PatchTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsPatch == nil {
+		return generated.PatchTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "PatchTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.PatchTransactionResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PatchTransaction", result)
+		return generated.PatchTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.PatchTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+	if request.Body == nil {
+		return generated.PatchTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+
+	req := patchTransactionRequest{
+		Type:               optionalStringFromPtr(request.Body.Type),
+		Status:             optionalStringFromPtr(request.Body.Status),
+		Amount:             optionalDecimalFromPtr(request.Body.Amount),
+		Currency:           optionalStringFromPtr(request.Body.Currency),
+		OccurredAt:         optionalStringFromPtr(request.Body.OccurredAt),
+		PlannedAt:          optionalStringFromPtr(request.Body.PlannedAt),
+		AccountFromID:      optionalStringFromPtr(request.Body.AccountFromId),
+		AccountToID:        optionalStringFromPtr(request.Body.AccountToId),
+		CategoryID:         optionalStringFromPtr(request.Body.CategoryId),
+		SubcategoryID:      optionalStringFromPtr(request.Body.SubcategoryId),
+		Comment:            optionalStringFromPtr(request.Body.Comment),
+		BudgetMemberID:     optionalRawFromPtr(request.Body.BudgetMemberId),
+		IncomeSourceID:     optionalRawFromPtr(request.Body.IncomeSourceId),
+		DebtID:             optionalRawFromPtr(request.Body.DebtId),
+		GoalID:             optionalRawFromPtr(request.Body.GoalId),
+		InvestmentID:       optionalRawFromPtr(request.Body.InvestmentId),
+		RecurringPaymentID: optionalRawFromPtr(request.Body.RecurringPaymentId),
+	}
+
+	input, details := validatePatchTransactionRequest(userID, shared.TransactionID(transactionID), req)
+	if len(details) > 0 {
+		return generated.PatchTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+
+	transaction, err := h.catalog.transactionsPatch.Patch(ctx, input)
+	if err != nil {
+		return mapTransactionAppErrorToPatch(err), nil
+	}
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.PatchTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.PatchTransaction200JSONResponse(response), nil
 }
 
 func (h *APIHandler) CancelTransaction(ctx context.Context, request generated.CancelTransactionRequestObject) (generated.CancelTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.CancelTransaction200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.CancelTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.CancelTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.CancelTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.CancelTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.CancelTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
-		}
+	if h == nil || h.catalog == nil || h.catalog.transactionsCancel == nil {
+		return generated.CancelTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	result, err := h.invokeCatalog(ctx, request, "CancelTransaction", decode)
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := result.(generated.CancelTransactionResponseObject)
+	userID, ok := userIDFromStrictContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for CancelTransaction", result)
+		return generated.CancelTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
 	}
-	return typed, nil
+	if request.Body != nil && len(*request.Body) > 0 {
+		return generated.CancelTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.CancelTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+	transaction, err := h.catalog.transactionsCancel.CancelByID(ctx, userID, shared.TransactionID(transactionID))
+	if err != nil {
+		return mapTransactionAppErrorToCancel(err), nil
+	}
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.CancelTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.CancelTransaction200JSONResponse(response), nil
 }
 
 func (h *APIHandler) DuplicateTransaction(ctx context.Context, request generated.DuplicateTransactionRequestObject) (generated.DuplicateTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 201:
-			var response generated.DuplicateTransaction201JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 400:
-			var response generated.DuplicateTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.DuplicateTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.DuplicateTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.DuplicateTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 422:
-			var response generated.DuplicateTransaction422JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.DuplicateTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
+	if h == nil || h.catalog == nil || h.catalog.transactionsDuplicate == nil {
+		return generated.DuplicateTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.DuplicateTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.DuplicateTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+	req := duplicateTransactionRequest{}
+	if request.Body != nil {
+		req = duplicateTransactionRequest{
+			Status:             optionalStringFromPtr(request.Body.Status),
+			OccurredAt:         optionalStringFromPtr(request.Body.OccurredAt),
+			PlannedAt:          optionalStringFromPtr(request.Body.PlannedAt),
+			Comment:            optionalStringFromPtr(request.Body.Comment),
+			BudgetMemberID:     optionalRawFromPtr(request.Body.BudgetMemberId),
+			IncomeSourceID:     optionalRawFromPtr(request.Body.IncomeSourceId),
+			DebtID:             optionalRawFromPtr(request.Body.DebtId),
+			GoalID:             optionalRawFromPtr(request.Body.GoalId),
+			InvestmentID:       optionalRawFromPtr(request.Body.InvestmentId),
+			RecurringPaymentID: optionalRawFromPtr(request.Body.RecurringPaymentId),
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "DuplicateTransaction", decode)
+
+	input, details := validateDuplicateTransactionRequest(userID, shared.TransactionID(transactionID), req)
+	if len(details) > 0 {
+		return generated.DuplicateTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(catalogErrorValidation, "Validation failed", details...)),
+		}, nil
+	}
+	transaction, err := h.catalog.transactionsDuplicate.DuplicateByID(ctx, input)
 	if err != nil {
-		return nil, err
+		return mapTransactionAppErrorToDuplicate(err), nil
 	}
-	typed, ok := result.(generated.DuplicateTransactionResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for DuplicateTransaction", result)
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.DuplicateTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
 	}
-	return typed, nil
+	return generated.DuplicateTransaction201JSONResponse(response), nil
 }
 
 func (h *APIHandler) PostTransaction(ctx context.Context, request generated.PostTransactionRequestObject) (generated.PostTransactionResponseObject, error) {
-	decode := func(status int, payload []byte) (any, error) {
-		switch status {
-		case 200:
-			var response generated.PostTransaction200JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
+	if h == nil || h.catalog == nil || h.catalog.transactionsPost == nil {
+		return generated.PostTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	userID, ok := userIDFromStrictContext(ctx)
+	if !ok {
+		return generated.PostTransaction401JSONResponse{
+			UnauthorizedErrorJSONResponse: generated.UnauthorizedErrorJSONResponse(accountErrorEnvelope(catalogErrorUnauthorized, "Unauthorized")),
+		}, nil
+	}
+	if request.Body != nil && len(*request.Body) > 0 {
+		return generated.PostTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "body", Message: "request body is invalid"},
+			)),
+		}, nil
+	}
+	transactionID := strings.TrimSpace(string(request.TransactionId))
+	if transactionID == "" {
+		return generated.PostTransaction400JSONResponse{
+			ValidationErrorJSONResponse: generated.ValidationErrorJSONResponse(accountErrorEnvelope(
+				catalogErrorValidation, "Validation failed", catalogFieldError{Field: "transactionId", Message: "transactionId is required"},
+			)),
+		}, nil
+	}
+	transaction, err := h.catalog.transactionsPost.PostByID(ctx, userID, shared.TransactionID(transactionID))
+	if err != nil {
+		return mapTransactionAppErrorToPost(err), nil
+	}
+	response, mapErr := toGeneratedTransaction(transaction)
+	if mapErr != nil {
+		return generated.PostTransaction500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}, nil
+	}
+	return generated.PostTransaction200JSONResponse(response), nil
+}
+
+func toGeneratedTransaction(transaction domaintransactions.Transaction) (generated.Transaction, error) {
+	response, err := toTransactionResponse(transaction)
+	if err != nil {
+		return generated.Transaction{}, err
+	}
+	return generated.Transaction{
+		Id:                 response.ID,
+		Type:               response.Type,
+		Status:             response.Status,
+		Amount:             response.Amount,
+		Currency:           response.Currency,
+		OccurredAt:         response.OccurredAt,
+		PlannedAt:          response.PlannedAt,
+		AccountFromId:      response.AccountFromID,
+		AccountToId:        response.AccountToID,
+		CategoryId:         response.CategoryID,
+		SubcategoryId:      response.SubcategoryID,
+		BudgetMemberId:     response.BudgetMemberID,
+		IncomeSourceId:     response.IncomeSourceID,
+		DebtId:             response.DebtID,
+		GoalId:             response.GoalID,
+		InvestmentId:       response.InvestmentID,
+		RecurringPaymentId: response.RecurringPaymentID,
+		Comment:            response.Comment,
+		CreatedAt:          response.CreatedAt,
+		UpdatedAt:          response.UpdatedAt,
+	}, nil
+}
+
+func strictParseListTransactionsQuery(userID shared.UserID, params generated.ListTransactionsParams) (appaccounting.ListTransactionsQuery, []catalogFieldError) {
+	query := appaccounting.ListTransactionsQuery{UserID: userID}
+	details := make([]catalogFieldError, 0, 4)
+
+	if params.Month != nil {
+		rawMonth := strings.TrimSpace(*params.Month)
+		if rawMonth != "" {
+			monthStart, err := time.Parse(monthLayout, rawMonth)
+			if err != nil {
+				details = append(details, catalogFieldError{Field: "month", Message: "month must be YYYY-MM"})
+			} else {
+				from := monthStart.UTC()
+				to := from.AddDate(0, 1, 0).Add(-time.Nanosecond)
+				query.EffectiveFrom = &from
+				query.EffectiveTo = &to
 			}
-			return response, nil
-		case 400:
-			var response generated.PostTransaction400JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 401:
-			var response generated.PostTransaction401JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 404:
-			var response generated.PostTransaction404JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 409:
-			var response generated.PostTransaction409JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		case 500:
-			var response generated.PostTransaction500JSONResponse
-			if len(payload) > 0 {
-				if err := json.Unmarshal(payload, &response); err != nil {
-					return nil, err
-				}
-			}
-			return response, nil
-		default:
-			return nil, fmt.Errorf("unexpected status %d", status)
 		}
 	}
-	result, err := h.invokeCatalog(ctx, request, "PostTransaction", decode)
-	if err != nil {
-		return nil, err
+	if params.From != nil {
+		from := params.From.Time.UTC()
+		query.EffectiveFrom = &from
 	}
-	typed, ok := result.(generated.PostTransactionResponseObject)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type %T for PostTransaction", result)
+	if params.To != nil {
+		to := params.To.Time.UTC().Add(24*time.Hour - time.Nanosecond)
+		query.EffectiveTo = &to
 	}
-	return typed, nil
+	if params.Type != nil {
+		parsed, err := domaintransactions.ParseTransactionType(strings.TrimSpace(*params.Type))
+		if err != nil {
+			details = append(details, catalogFieldError{Field: "type", Message: "type must be one of: income, expense, transfer, investment, saving"})
+		} else {
+			query.Type = &parsed
+		}
+	}
+	if params.Status != nil {
+		parsed, err := domaintransactions.ParseTransactionStatus(strings.TrimSpace(*params.Status))
+		if err != nil {
+			details = append(details, catalogFieldError{Field: "status", Message: "status must be one of: planned, posted, cancelled"})
+		} else {
+			query.Status = &parsed
+		}
+	}
+	if params.AccountId != nil && strings.TrimSpace(*params.AccountId) != "" {
+		accountID := shared.AccountID(strings.TrimSpace(*params.AccountId))
+		query.AccountID = &accountID
+	}
+	if params.CategoryId != nil && strings.TrimSpace(*params.CategoryId) != "" {
+		categoryID := shared.CategoryID(strings.TrimSpace(*params.CategoryId))
+		query.CategoryID = &categoryID
+	}
+	if params.SubcategoryId != nil && strings.TrimSpace(*params.SubcategoryId) != "" {
+		subcategoryID := shared.SubcategoryID(strings.TrimSpace(*params.SubcategoryId))
+		query.SubcategoryID = &subcategoryID
+	}
+	if params.Sort != nil {
+		switch *params.Sort {
+		case generated.ListTransactionsParamsSortOccurredAtDesc:
+			query.Sort = appaccounting.TransactionsSortEffectiveAtDesc
+		case generated.ListTransactionsParamsSortOccurredAtAsc:
+			query.Sort = appaccounting.TransactionsSortEffectiveAtAsc
+		case generated.ListTransactionsParamsSortCreatedAtDesc:
+			query.Sort = appaccounting.TransactionsSortCreatedAtDesc
+		case generated.ListTransactionsParamsSortCreatedAtAsc:
+			query.Sort = appaccounting.TransactionsSortCreatedAtAsc
+		case generated.ListTransactionsParamsSortAmountDesc:
+			query.Sort = appaccounting.TransactionsSortAmountDesc
+		case generated.ListTransactionsParamsSortAmountAsc:
+			query.Sort = appaccounting.TransactionsSortAmountAsc
+		default:
+			details = append(details, catalogFieldError{Field: "sort", Message: "sort must be one of: occurredAt:desc, occurredAt:asc, createdAt:desc, createdAt:asc, amount:desc, amount:asc"})
+		}
+	}
+	if params.Q != nil {
+		raw := strings.TrimSpace(*params.Q)
+		if raw != "" {
+			query.Search = &raw
+		}
+	}
+	if params.BudgetMemberId != nil && strings.TrimSpace(*params.BudgetMemberId) != "" {
+		details = append(details, catalogFieldError{Field: "budgetMemberId", Message: "budgetMemberId is not supported in MVP1"})
+	}
+	return query, details
+}
+
+func valueOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func decimalPtrFromStringPtr(v *string) *DecimalString {
+	if v == nil {
+		return nil
+	}
+	d := DecimalString(*v)
+	return &d
+}
+
+func rawJSONPtrFromStringPtr(v *string) *json.RawMessage {
+	if v == nil {
+		return nil
+	}
+	raw := json.RawMessage([]byte(*v))
+	return &raw
+}
+
+func optionalStringFromPtr(v *string) optionalString {
+	return optionalString{Set: v != nil, Value: v}
+}
+
+func optionalDecimalFromPtr(v *string) optionalDecimal {
+	if v == nil {
+		return optionalDecimal{Set: false, Value: nil}
+	}
+	d := DecimalString(*v)
+	return optionalDecimal{Set: true, Value: &d}
+}
+
+func optionalRawFromPtr(v *string) optionalRawValue {
+	if v == nil {
+		return optionalRawValue{Set: false, IsNil: false}
+	}
+	return optionalRawValue{Set: true, IsNil: false}
+}
+
+func mapTransactionAppErrorToCreate(err error) generated.CreateTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.CreateTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.CreateTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	case isTransactionBusinessRuleError(err):
+		return generated.CreateTransaction422JSONResponse{BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation"))}
+	default:
+		return generated.CreateTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionAppErrorToPatch(err error) generated.PatchTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.PatchTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.PatchTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	case isTransactionBusinessRuleError(err):
+		return generated.PatchTransaction422JSONResponse{BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation"))}
+	default:
+		return generated.PatchTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionAppErrorToDelete(err error) generated.DeleteTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.DeleteTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.DeleteTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	default:
+		return generated.DeleteTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionAppErrorToPost(err error) generated.PostTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.PostTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.PostTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	default:
+		return generated.PostTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionAppErrorToCancel(err error) generated.CancelTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.CancelTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.CancelTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	default:
+		return generated.CancelTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionAppErrorToDuplicate(err error) generated.DuplicateTransactionResponseObject {
+	switch {
+	case errors.Is(err, appaccounting.ErrTransactionNotFound):
+		return generated.DuplicateTransaction404JSONResponse{NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(catalogErrorNotFound, "Resource not found"))}
+	case isTransactionConflictError(err):
+		return generated.DuplicateTransaction409JSONResponse{ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict"))}
+	case isTransactionBusinessRuleError(err):
+		return generated.DuplicateTransaction422JSONResponse{BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation"))}
+	default:
+		return generated.DuplicateTransaction500JSONResponse{InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error"))}
+	}
+}
+
+func mapTransactionBulkAppErrorToCreate(err error) generated.CreateTransactionsBulkResponseObject {
+	var itemErr *appaccounting.BulkItemError
+	if errors.As(err, &itemErr) {
+		field := indexedItemField(itemErr.Index, itemErr.Field)
+		switch {
+		case errors.Is(itemErr.Err, appaccounting.ErrTransactionNotFound):
+			return generated.CreateTransactionsBulk404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorNotFound, "Resource not found", catalogFieldError{Field: field, Message: "transaction not found"},
+				)),
+			}
+		case isTransactionConflictError(itemErr.Err):
+			msg := itemErr.Err.Error()
+			if itemErr.Field == "amount" {
+				msg = "posted transaction amount cannot be changed; cancel and duplicate instead"
+			}
+			return generated.CreateTransactionsBulk409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Transaction cannot be updated", catalogFieldError{Field: field, Message: msg},
+				)),
+			}
+		case isTransactionBusinessRuleError(itemErr.Err):
+			return generated.CreateTransactionsBulk422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{Field: field, Message: itemErr.Err.Error()},
+				)),
+			}
+		default:
+			return generated.CreateTransactionsBulk500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}
+		}
+	}
+
+	switch {
+	case isTransactionConflictError(err):
+		return generated.CreateTransactionsBulk409JSONResponse{
+			ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict")),
+		}
+	case isTransactionBusinessRuleError(err):
+		return generated.CreateTransactionsBulk422JSONResponse{
+			BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation")),
+		}
+	default:
+		return generated.CreateTransactionsBulk500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}
+	}
+}
+
+func mapTransactionBulkAppErrorToPatch(err error) generated.PatchTransactionsBulkResponseObject {
+	var itemErr *appaccounting.BulkItemError
+	if errors.As(err, &itemErr) {
+		field := indexedItemField(itemErr.Index, itemErr.Field)
+		switch {
+		case errors.Is(itemErr.Err, appaccounting.ErrTransactionNotFound):
+			return generated.PatchTransactionsBulk404JSONResponse{
+				NotFoundErrorJSONResponse: generated.NotFoundErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorNotFound, "Resource not found", catalogFieldError{Field: field, Message: "transaction not found"},
+				)),
+			}
+		case isTransactionConflictError(itemErr.Err):
+			msg := itemErr.Err.Error()
+			if itemErr.Field == "amount" {
+				msg = "posted transaction amount cannot be changed; cancel and duplicate instead"
+			}
+			return generated.PatchTransactionsBulk409JSONResponse{
+				ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorConflict, "Transaction cannot be updated", catalogFieldError{Field: field, Message: msg},
+				)),
+			}
+		case isTransactionBusinessRuleError(itemErr.Err):
+			return generated.PatchTransactionsBulk422JSONResponse{
+				BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(
+					catalogErrorBusinessRuleViolation, "Business rule violation", catalogFieldError{Field: field, Message: itemErr.Err.Error()},
+				)),
+			}
+		default:
+			return generated.PatchTransactionsBulk500JSONResponse{
+				InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+			}
+		}
+	}
+
+	switch {
+	case isTransactionConflictError(err):
+		return generated.PatchTransactionsBulk409JSONResponse{
+			ConflictErrorJSONResponse: generated.ConflictErrorJSONResponse(accountErrorEnvelope(catalogErrorConflict, "Conflict")),
+		}
+	case isTransactionBusinessRuleError(err):
+		return generated.PatchTransactionsBulk422JSONResponse{
+			BusinessRuleErrorJSONResponse: generated.BusinessRuleErrorJSONResponse(accountErrorEnvelope(catalogErrorBusinessRuleViolation, "Business rule violation")),
+		}
+	default:
+		return generated.PatchTransactionsBulk500JSONResponse{
+			InternalErrorJSONResponse: generated.InternalErrorJSONResponse(accountErrorEnvelope(catalogErrorInternal, "Internal error")),
+		}
+	}
+}
+
+func isTransactionConflictError(err error) bool {
+	return errors.Is(err, appaccounting.ErrConcurrentTransactionUpdate) ||
+		errors.Is(err, appaccounting.ErrTransactionAlreadyPosted) ||
+		errors.Is(err, appaccounting.ErrTransactionAlreadyCancelled) ||
+		errors.Is(err, appaccounting.ErrPostedTransactionPatchConflict) ||
+		errors.Is(err, appaccounting.ErrCancelledTransactionPatchConflict) ||
+		errors.Is(err, appaccounting.ErrPostedTransactionDeleteConflict)
+}
+
+func isTransactionBusinessRuleError(err error) bool {
+	return errors.Is(err, appaccounting.ErrAccountNotFound) ||
+		errors.Is(err, domaintransactions.ErrInvalidTransactionType) ||
+		errors.Is(err, domaintransactions.ErrInvalidTransactionStatus) ||
+		errors.Is(err, domaintransactions.ErrTransactionAmountMustBeNonNegative) ||
+		errors.Is(err, domaintransactions.ErrTransactionAccountFromRequired) ||
+		errors.Is(err, domaintransactions.ErrTransactionAccountToRequired) ||
+		errors.Is(err, domaintransactions.ErrTransactionAccountFromMustBeEmpty) ||
+		errors.Is(err, domaintransactions.ErrTransactionAccountToMustBeEmpty) ||
+		errors.Is(err, domaintransactions.ErrTransactionCategoryMustBeEmpty) ||
+		errors.Is(err, domaintransactions.ErrTransactionSubcategoryMustBeEmpty) ||
+		errors.Is(err, domaintransactions.ErrTransactionCategoryRequired) ||
+		errors.Is(err, domaintransactions.ErrTransactionTransferAccountsMustDiffer)
 }
 
 func (h *APIHandler) RegisterAuth(ctx context.Context, request generated.RegisterAuthRequestObject) (generated.RegisterAuthResponseObject, error) {
